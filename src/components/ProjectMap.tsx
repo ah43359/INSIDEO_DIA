@@ -1,0 +1,875 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import maplibregl, { type Map as MlMap, type GeoJSONSource } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+// Map of legend "group" ↔ maplibre layer ids. Clicking a legend row
+// toggles every layer in the group's array.
+const LAYER_GROUPS = {
+  area:        ["area-estudio-fill", "area-estudio-line"],
+  subbasins:   ["subbasins-fill", "subbasins-line"],
+  microcuencas:["microcuencas-fill", "microcuencas-line", "microcuencas-label"],
+  rivers:      ["rivers-line"],
+  receptores:  ["receptores-fill", "receptores-label"],
+  components:  ["components-fill", "components-label"],
+  // sampling-station kinds are filtered via filter expression rather
+  // than separate layers (see toggleStationKindFilter).
+} as const;
+
+type LayerGroup = keyof typeof LAYER_GROUPS;
+
+interface ProjectMapProps {
+  geojson: GeoJSON.FeatureCollection;
+  /** Microcuencas (Pfafstetter UH) that intersect the project. Optional. */
+  microcuencas?: GeoJSON.FeatureCollection | null;
+  /** Rivers near the project (HydroRIVERS, filtered by RPC). Optional. */
+  rivers?: GeoJSON.FeatureCollection | null;
+  /** Centros poblados that fall in or near the área de estudio. Optional. */
+  receptores?: GeoJSON.FeatureCollection | null;
+  /** Proposed sampling stations (air / noise / vibration / etc.). Optional. */
+  samplingStations?: GeoJSON.FeatureCollection | null;
+  /** Single área de estudio polygon (draft or approved). Optional. */
+  areaEstudio?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  /** Visual treatment for the área de estudio outline. */
+  areaEstudioStatus?: "draft" | "approved" | "superseded" | null;
+}
+
+// Color & ranking for sampling-station kinds (kept top-level so the
+// legend can reuse it without re-wiring through props).
+const STATION_COLORS: Record<string, string> = {
+  aire:             "#10b981", // emerald
+  ruido:            "#a855f7", // purple
+  vibraciones:      "#ef4444", // red
+  agua_superficial: "#0ea5e9", // sky
+  agua_subterranea: "#0284c7", // darker sky
+  suelos:           "#a16207", // earth
+  sedimentos:       "#854d0e", // brown
+  default:          "#1f2937", // graphite
+};
+
+const COLOR_BY_TIPO: Record<string, string> = {
+  plataforma: "#dc2626",
+  acceso: "#f59e0b",
+  campamento: "#2563eb",
+  tajo: "#7c3aed",
+  default: "#52525b",
+};
+
+const EMPTY_FC: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+const EMPTY_AREA_FC: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+function asAreaFeatureCollection(
+  feature: ProjectMapProps["areaEstudio"],
+): GeoJSON.FeatureCollection {
+  if (!feature) return EMPTY_AREA_FC;
+  return { type: "FeatureCollection", features: [feature] };
+}
+
+export default function ProjectMap({
+  geojson,
+  microcuencas,
+  rivers,
+  receptores,
+  samplingStations,
+  areaEstudio,
+  areaEstudioStatus,
+}: ProjectMapProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MlMap | null>(null);
+
+  // Layer-group visibility (true = visible). Default everything on.
+  const [groupVisible, setGroupVisible] = useState<Record<LayerGroup, boolean>>({
+    area: true,
+    subbasins: true,
+    microcuencas: true,
+    rivers: true,
+    receptores: true,
+    components: true,
+  });
+  // Sampling-station kinds: each kind togglable independently.
+  const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
+
+  // The colour of the área de estudio outline communicates status:
+  //   draft → amber   approved → emerald   superseded → muted
+  const areaColor =
+    areaEstudioStatus === "approved"
+      ? "#059669"
+      : areaEstudioStatus === "superseded"
+      ? "#a8a29e"
+      : "#d97706";
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+      center: [-75, -10],
+      zoom: 5,
+      attributionControl: { compact: true },
+    });
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+
+    map.on("load", () => {
+      // Layer order (bottom → top): microcuencas, área de estudio,
+      // rivers, components. Rivers sit *above* the área de estudio fill
+      // so they remain visible inside the polygon.
+      map.addSource("microcuencas", {
+        type: "geojson",
+        data: microcuencas ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "microcuencas-fill",
+        type: "fill",
+        source: "microcuencas",
+        paint: {
+          "fill-color": "#0ea5e9",
+          "fill-opacity": 0.08,
+        },
+      });
+      map.addLayer({
+        id: "microcuencas-line",
+        type: "line",
+        source: "microcuencas",
+        paint: {
+          "line-color": "#0369a1",
+          "line-width": 1,
+          "line-dasharray": [3, 2],
+        },
+      });
+      map.addLayer({
+        id: "microcuencas-label",
+        type: "symbol",
+        source: "microcuencas",
+        layout: {
+          "text-field": ["get", "pfafstetter"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 11,
+        },
+        paint: {
+          "text-color": "#0369a1",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.2,
+        },
+      });
+
+      map.addSource("area-estudio", {
+        type: "geojson",
+        data: asAreaFeatureCollection(areaEstudio),
+      });
+
+      // Sub-cuencas calculadas — the D8-computed sub-basin envelope.
+      // Renders as a subtle hatched pattern so it can be toggled
+      // independently from the generic area-estudio layer.
+      map.addSource("subbasins", {
+        type: "geojson",
+        data: asAreaFeatureCollection(areaEstudio),
+      });
+      map.addLayer({
+        id: "subbasins-fill",
+        type: "fill",
+        source: "subbasins",
+        paint: {
+          "fill-color": "#059669",
+          "fill-opacity": 0.04,
+        },
+      });
+      map.addLayer({
+        id: "subbasins-line",
+        type: "line",
+        source: "subbasins",
+        paint: {
+          "line-color": "#059669",
+          "line-width": 2,
+          "line-dasharray": [6, 3],
+        },
+      });
+
+      map.addLayer({
+        id: "area-estudio-fill",
+        type: "fill",
+        source: "area-estudio",
+        paint: {
+          "fill-color": areaColor,
+          "fill-opacity": 0.06,
+        },
+      });
+      map.addLayer({
+        id: "area-estudio-line",
+        type: "line",
+        source: "area-estudio",
+        paint: {
+          "line-color": areaColor,
+          "line-width": 2.5,
+        },
+      });
+
+      // Rivers — width scales with strahler order so main channels read
+      // through. Tributaries feather into hairlines at low zoom.
+      map.addSource("rivers", {
+        type: "geojson",
+        data: rivers ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "rivers-line",
+        type: "line",
+        source: "rivers",
+        paint: {
+          "line-color": "#1d4ed8",
+          "line-opacity": 0.75,
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "strahler_order"], 1],
+            1, 0.5,
+            3, 1.0,
+            5, 1.8,
+            7, 2.8,
+            9, 4.0,
+          ],
+        },
+      });
+
+      // Receptores sensibles — small triangle-ish dots; size scales with
+      // CAT_POBLAD priority so cities/villages read through clusters.
+      map.addSource("receptores", {
+        type: "geojson",
+        data: receptores ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "receptores-fill",
+        type: "circle",
+        source: "receptores",
+        paint: {
+          "circle-radius": [
+            "match",
+            ["get", "categoria_poblado"],
+            "CIUDAD",                 7,
+            "VILLA",                  6,
+            "PUEBLO",                 5,
+            "CASERÍO",                4,
+            "ANEXO",                  3,
+            3,
+          ],
+          "circle-color": "#ec4899", // pink-500
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.85,
+        },
+      });
+      map.addLayer({
+        id: "receptores-label",
+        type: "symbol",
+        source: "receptores",
+        minzoom: 11,
+        layout: {
+          "text-field": ["get", "nombre"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 10,
+          "text-offset": [0, 1.0],
+          "text-anchor": "top",
+          "text-optional": true,
+        },
+        paint: {
+          "text-color": "#831843",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.4,
+        },
+      });
+
+      // Sampling stations — colored by kind, encoded as a paint match.
+      map.addSource("sampling-stations", {
+        type: "geojson",
+        data: samplingStations ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "sampling-stations-fill",
+        type: "circle",
+        source: "sampling-stations",
+        paint: {
+          // Different sizes per kind so stations are individually
+          // recognisable when several share a coordinate.
+          "circle-radius": [
+            "match",
+            ["get", "kind"],
+            "aire",             8,
+            "ruido",            10,
+            "vibraciones",      12,
+            "agua_superficial", 11,
+            "agua_subterranea", 9,
+            "suelos",           7,
+            "sedimentos",       8,
+            8,
+          ],
+          "circle-color": [
+            "match",
+            ["get", "kind"],
+            "aire",             STATION_COLORS.aire,
+            "ruido",            STATION_COLORS.ruido,
+            "vibraciones",      STATION_COLORS.vibraciones,
+            "agua_superficial", STATION_COLORS.agua_superficial,
+            "agua_subterranea", STATION_COLORS.agua_subterranea,
+            "suelos",           STATION_COLORS.suelos,
+            "sedimentos",       STATION_COLORS.sedimentos,
+            STATION_COLORS.default,
+          ],
+          "circle-stroke-width": 2.5,
+          "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.95,
+        },
+      });
+      map.addLayer({
+        id: "sampling-stations-label",
+        type: "symbol",
+        source: "sampling-stations",
+        layout: {
+          "text-field": ["get", "station_code"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 10,
+          "text-offset": [0, -1.4],
+          "text-anchor": "bottom",
+        },
+        paint: {
+          "text-color": "#0f172a",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.4,
+        },
+      });
+
+      map.addSource("components", { type: "geojson", data: geojson });
+      map.addLayer({
+        id: "components-fill",
+        type: "circle",
+        source: "components",
+        paint: {
+          "circle-radius": 8,
+          "circle-color": [
+            "match",
+            ["get", "tipo"],
+            "plataforma", COLOR_BY_TIPO.plataforma,
+            "acceso",     COLOR_BY_TIPO.acceso,
+            "campamento", COLOR_BY_TIPO.campamento,
+            "tajo",       COLOR_BY_TIPO.tajo,
+            COLOR_BY_TIPO.default,
+          ],
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+      map.addLayer({
+        id: "components-label",
+        type: "symbol",
+        source: "components",
+        layout: {
+          "text-field": ["get", "nombre"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 11,
+          "text-offset": [0, 1.4],
+          "text-anchor": "top",
+        },
+        paint: {
+          "text-color": "#1c1917",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      });
+
+      // Fit to the widest available extent: área de estudio > microcuencas
+      // > components. The outermost layer is the most informative bound.
+      const bounds = new maplibregl.LngLatBounds();
+      let extended = false;
+
+      const extendFromGeometry = (geom: GeoJSON.Geometry) => {
+        if (geom.type === "Point") {
+          bounds.extend(geom.coordinates as [number, number]);
+          extended = true;
+        } else if (geom.type === "MultiPoint" || geom.type === "LineString") {
+          for (const c of geom.coordinates as [number, number][]) {
+            bounds.extend(c);
+            extended = true;
+          }
+        } else if (
+          geom.type === "MultiLineString" ||
+          geom.type === "Polygon"
+        ) {
+          for (const ring of geom.coordinates as [number, number][][]) {
+            for (const c of ring) {
+              bounds.extend(c);
+              extended = true;
+            }
+          }
+        } else if (geom.type === "MultiPolygon") {
+          for (const poly of geom.coordinates as [number, number][][][]) {
+            for (const ring of poly) {
+              for (const c of ring) {
+                bounds.extend(c);
+                extended = true;
+              }
+            }
+          }
+        }
+      };
+
+      if (areaEstudio) {
+        extendFromGeometry(areaEstudio.geometry);
+      }
+      if (!extended && microcuencas?.features.length) {
+        for (const f of microcuencas.features) {
+          extendFromGeometry(f.geometry);
+        }
+      }
+      if (!extended) {
+        for (const f of geojson.features) {
+          extendFromGeometry(f.geometry);
+        }
+      }
+      if (extended) {
+        map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 0 });
+      }
+
+      // Component popups
+      map.on("click", "components-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">${props.nombre}</div>
+            <div>Tipo: ${props.tipo}</div>
+            ${props.categoria ? `<div>Categoría: ${props.categoria}</div>` : ""}
+            ${props.area_m2 ? `<div>Área: ${props.area_m2} m²</div>` : ""}
+          </div>`;
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+      map.on("mouseenter", "components-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "components-fill", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      // River popup
+      map.on("click", "rivers-line", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const len = props.length_km != null ? Number(props.length_km).toFixed(1) : null;
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">
+              ${props.nombre ?? `Río ${props.source_id}`}
+            </div>
+            ${len ? `<div>Longitud: ${len} km</div>` : ""}
+            ${props.strahler_order != null ? `<div>Strahler: ${props.strahler_order}</div>` : ""}
+          </div>`;
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+      map.on("mouseenter", "rivers-line", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "rivers-line", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      // Receptor popup
+      map.on("click", "receptores-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const inside = String(props.inside_area_estudio) === "true";
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">${props.nombre}</div>
+            ${props.categoria_poblado ? `<div>${props.categoria_poblado}</div>` : ""}
+            ${props.distrito ? `<div>${props.distrito} / ${props.provincia ?? ""}</div>` : ""}
+            <div style="margin-top:4px; color: ${inside ? "#059669" : "#a16207"};">
+              ${inside ? "Dentro del área de estudio" : "En buffer perimetral"}
+            </div>
+          </div>`;
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+
+      // Sampling station popup
+      map.on("click", "sampling-stations-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        let params: string[] = [];
+        if (typeof props.parameters === "string") {
+          try { params = JSON.parse(props.parameters); } catch { params = []; }
+        } else if (Array.isArray(props.parameters)) {
+          params = props.parameters as string[];
+        }
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px; max-width: 280px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">
+              ${props.station_code} <span style="font-weight: 400; color: #64748b;">· ${props.kind}</span>
+            </div>
+            ${props.target_receptor_nombre ? `<div>Receptor: ${props.target_receptor_nombre}</div>` : ""}
+            ${params.length ? `<div style="margin-top:4px;"><b>Parámetros:</b> ${params.join(", ")}</div>` : ""}
+            ${props.rationale ? `<div style="margin-top:4px; color: #475569;">${props.rationale}</div>` : ""}
+          </div>`;
+        new maplibregl.Popup({ closeButton: true, maxWidth: "320px" })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+
+      // Microcuenca popup (Pfafstetter + nombre)
+      map.on("click", "microcuencas-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const areaKm2 = props.area_km2 != null ? Number(props.area_km2).toFixed(1) : null;
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">UH ${props.pfafstetter}</div>
+            ${props.nombre ? `<div>${props.nombre}</div>` : ""}
+            <div>Nivel ${props.nivel}</div>
+            ${areaKm2 ? `<div>${areaKm2} km²</div>` : ""}
+          </div>`;
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+    });
+
+    mapRef.current = map;
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+    // We deliberately mount once; data updates flow through the effect
+    // below via `setData`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reactively update sources + outline colour when props change.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    const compSrc = map.getSource("components") as GeoJSONSource | undefined;
+    if (compSrc) compSrc.setData(geojson);
+
+    const cuencasSrc = map.getSource("microcuencas") as GeoJSONSource | undefined;
+    if (cuencasSrc) cuencasSrc.setData(microcuencas ?? EMPTY_FC);
+
+    const riversSrc = map.getSource("rivers") as GeoJSONSource | undefined;
+    if (riversSrc) riversSrc.setData(rivers ?? EMPTY_FC);
+
+    const recepSrc = map.getSource("receptores") as GeoJSONSource | undefined;
+    if (recepSrc) recepSrc.setData(receptores ?? EMPTY_FC);
+
+    const stationsSrc = map.getSource("sampling-stations") as GeoJSONSource | undefined;
+    if (stationsSrc) stationsSrc.setData(samplingStations ?? EMPTY_FC);
+
+    const areaSrc = map.getSource("area-estudio") as GeoJSONSource | undefined;
+    if (areaSrc) areaSrc.setData(asAreaFeatureCollection(areaEstudio));
+
+    const subSrc = map.getSource("subbasins") as GeoJSONSource | undefined;
+    if (subSrc) subSrc.setData(asAreaFeatureCollection(areaEstudio));
+
+    if (map.getLayer("area-estudio-fill")) {
+      map.setPaintProperty("area-estudio-fill", "fill-color", areaColor);
+    }
+    if (map.getLayer("area-estudio-line")) {
+      map.setPaintProperty("area-estudio-line", "line-color", areaColor);
+    }
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaColor]);
+
+  // Apply group visibility toggles to the underlying maplibre layers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      for (const [group, layerIds] of Object.entries(LAYER_GROUPS)) {
+        const visible = groupVisible[group as LayerGroup];
+        for (const id of layerIds) {
+          if (map.getLayer(id)) {
+            map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+          }
+        }
+      }
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [groupVisible]);
+
+  // Apply station-kind visibility via a filter expression. Empty
+  // selection (all off) falls back to "kind == nothing" → no features.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const visibleKinds = Object.entries(stationKindVisible)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
+      const filter: maplibregl.FilterSpecification | null =
+        visibleKinds.length === 0
+          ? ["==", ["get", "kind"], "__none__"]
+          : ["in", ["get", "kind"], ["literal", visibleKinds]];
+      for (const id of ["sampling-stations-fill", "sampling-stations-label"]) {
+        if (map.getLayer(id)) map.setFilter(id, filter);
+      }
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [stationKindVisible]);
+
+  // Toggle handlers
+  const toggleGroup = (g: LayerGroup) =>
+    setGroupVisible((prev) => ({ ...prev, [g]: !prev[g] }));
+  const toggleStationKind = (k: string) =>
+    setStationKindVisible((prev) => ({ ...prev, [k]: !prev[k] }));
+
+  const hasMicrocuencas = (microcuencas?.features.length ?? 0) > 0;
+  const hasRivers = (rivers?.features.length ?? 0) > 0;
+  const hasReceptores = (receptores?.features.length ?? 0) > 0;
+  const hasStations = (samplingStations?.features.length ?? 0) > 0;
+  const hasArea = areaEstudio !== null && areaEstudio !== undefined;
+  const hasComponents = geojson.features.length > 0;
+
+  // Distinct station kinds present, in stable order, for the legend.
+  const stationKinds = useMemo<string[]>(() => {
+    if (!hasStations || !samplingStations) return [];
+    const seen = new Set<string>();
+    for (const f of samplingStations.features) {
+      const k = f.properties?.kind;
+      if (typeof k === "string") seen.add(k);
+    }
+    const order = ["aire", "ruido", "vibraciones",
+                   "agua_superficial", "agua_subterranea",
+                   "suelos", "sedimentos"];
+    return [...seen].sort((a, b) => {
+      const ai = order.indexOf(a); const bi = order.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+  }, [hasStations, samplingStations]);
+
+  // No effect needed to seed defaults — the legend reads
+  // `stationKindVisible[k] ?? true`, so any kind not yet in state is
+  // treated as visible until the user toggles it.
+
+  const areaStatusLabel =
+    areaEstudioStatus === "approved"
+      ? "Aprobada"
+      : areaEstudioStatus === "superseded"
+      ? "Reemplazada"
+      : "Borrador";
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative h-[480px] w-full overflow-hidden rounded-lg border border-stone-200"
+    >
+      <MapLegend
+        items={[
+          hasArea
+            ? {
+                label: `Área de estudio (${areaStatusLabel})`,
+                swatch: "area" as const,
+                color: areaColor,
+                visible: groupVisible.area,
+                onToggle: () => toggleGroup("area"),
+              }
+            : null,
+          hasArea
+            ? {
+                label: "Sub-cuencas calculadas (D8)",
+                swatch: "dashedLine" as const,
+                color: "#059669",
+                visible: groupVisible.subbasins,
+                onToggle: () => toggleGroup("subbasins"),
+              }
+            : null,
+          hasMicrocuencas
+            ? {
+                label: "Microcuencas (UH ANA)",
+                swatch: "dashedLine" as const,
+                color: "#0369a1",
+                visible: groupVisible.microcuencas,
+                onToggle: () => toggleGroup("microcuencas"),
+              }
+            : null,
+          hasRivers
+            ? {
+                label: "Ríos (HydroRIVERS)",
+                swatch: "line" as const,
+                color: "#1d4ed8",
+                visible: groupVisible.rivers,
+                onToggle: () => toggleGroup("rivers"),
+              }
+            : null,
+          hasReceptores
+            ? {
+                label: "Receptores sensibles (CCPP)",
+                swatch: "dot" as const,
+                color: "#ec4899",
+                visible: groupVisible.receptores,
+                onToggle: () => toggleGroup("receptores"),
+              }
+            : null,
+          ...stationKinds.map((k): LegendItem => ({
+            label: `Estación · ${SAMPLING_KIND_LABEL[k] ?? k}`,
+            swatch: "dot" as const,
+            color: STATION_COLORS[k] ?? STATION_COLORS.default,
+            visible: stationKindVisible[k] ?? true,
+            onToggle: () => toggleStationKind(k),
+          })),
+          hasComponents
+            ? {
+                label: "Componentes",
+                swatch: "componentDots" as const,
+                colors: COMPONENT_LEGEND_DOTS,
+                visible: groupVisible.components,
+                onToggle: () => toggleGroup("components"),
+              }
+            : null,
+        ].filter((x): x is LegendItem => x !== null)}
+      />
+    </div>
+  );
+}
+
+// ─── Legend ─────────────────────────────────────────────────────────────
+
+const COMPONENT_LEGEND_DOTS: { label: string; color: string }[] = [
+  { label: "Plataforma", color: COLOR_BY_TIPO.plataforma },
+  { label: "Acceso", color: COLOR_BY_TIPO.acceso },
+  { label: "Campamento", color: COLOR_BY_TIPO.campamento },
+  { label: "Tajo", color: COLOR_BY_TIPO.tajo },
+  { label: "Otro", color: COLOR_BY_TIPO.default },
+];
+
+interface LegendItemBase {
+  label: string;
+  visible: boolean;
+  onToggle: () => void;
+}
+
+type LegendItem =
+  | (LegendItemBase & { swatch: "area"; color: string })
+  | (LegendItemBase & { swatch: "line"; color: string })
+  | (LegendItemBase & { swatch: "dashedLine"; color: string })
+  | (LegendItemBase & { swatch: "dot"; color: string })
+  | (LegendItemBase & { swatch: "componentDots"; colors: { label: string; color: string }[] });
+
+const SAMPLING_KIND_LABEL: Record<string, string> = {
+  aire: "Aire",
+  ruido: "Ruido",
+  vibraciones: "Vibraciones",
+  agua_superficial: "Agua superficial",
+  agua_subterranea: "Agua subterránea",
+  suelos: "Suelos",
+  sedimentos: "Sedimentos",
+};
+
+function LegendSwatch({ item }: { item: LegendItem }) {
+  switch (item.swatch) {
+    case "area":
+      return (
+        <span
+          aria-hidden
+          className="inline-block h-3 w-5 rounded-sm border-2"
+          style={{
+            borderColor: item.color,
+            backgroundColor: `${item.color}1A`, // 10% alpha
+          }}
+        />
+      );
+    case "line":
+      return (
+        <span
+          aria-hidden
+          className="inline-block h-[2px] w-5 rounded-full"
+          style={{ backgroundColor: item.color }}
+        />
+      );
+    case "dashedLine":
+      return (
+        <span
+          aria-hidden
+          className="inline-block h-[2px] w-5"
+          style={{
+            backgroundImage: `repeating-linear-gradient(to right, ${item.color} 0 4px, transparent 4px 7px)`,
+          }}
+        />
+      );
+    case "dot":
+      return (
+        <span
+          aria-hidden
+          className="inline-block h-3 w-3 rounded-full ring-1 ring-white"
+          style={{ backgroundColor: item.color }}
+        />
+      );
+    case "componentDots":
+      return (
+        <span aria-hidden className="inline-flex items-center gap-0.5">
+          {item.colors.map((c) => (
+            <span
+              key={c.label}
+              title={c.label}
+              className="inline-block h-2.5 w-2.5 rounded-full ring-1 ring-white"
+              style={{ backgroundColor: c.color }}
+            />
+          ))}
+        </span>
+      );
+  }
+}
+
+function MapLegend({ items }: { items: LegendItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div
+      role="region"
+      aria-label="Leyenda del mapa"
+      className="absolute left-3 bottom-3 z-10 max-w-[16rem] rounded-md border border-stone-200 bg-white/95 p-2.5 text-xs shadow-sm backdrop-blur"
+    >
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+        Capas <span className="font-normal normal-case">(click para ocultar)</span>
+      </p>
+      <ul className="space-y-1">
+        {items.map((item) => (
+          <li key={item.label}>
+            <button
+              type="button"
+              onClick={item.onToggle}
+              aria-pressed={item.visible}
+              className={
+                "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left transition-opacity hover:bg-stone-100 " +
+                (item.visible ? "opacity-100" : "opacity-40")
+              }
+            >
+              <LegendSwatch item={item} />
+              <span className={item.visible ? "text-stone-700" : "text-stone-500 line-through"}>
+                {item.label}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

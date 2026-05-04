@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://insideo.local/schemas/rfi_schema.json",
+  "title": "RFI — Intake de proyecto DIA Exploración",
+  "description": "Esquema de información que el cliente entrega al iniciar un nuevo estudio DIA de exploración minera en Perú. Cubre identidad del titular, ubicación, descripción del proyecto, inventario exhaustivo de componentes, recursos, residuos, mano de obra y cronograma. Las cantidades en cada componente son 0 por defecto — el cliente sólo llena lo que aplica.",
+  "type": "object",
+  "required": ["cliente", "proyecto", "componentes_proyecto", "componentes_file"],
+  "additionalProperties": false,
+
+  "properties": {
+
+    "cliente": {
+      "type": "object",
+      "description": "Identificación del titular del proyecto.",
+      "required": ["razon_social", "ruc", "representante"],
+      "additionalProperties": false,
+      "properties": {
+        "razon_social":      { "type": "string", "minLength": 1, "description": "Razón social del titular (Ej: Compañía Minera Ejemplo S.A.)." },
+        "ruc":               { "type": "string", "pattern": "^[0-9]{11}$", "description": "RUC de 11 dígitos." },
+        "domicilio":         { "type": "string", "description": "Domicilio fiscal." },
+        "representante":     { "type": "string", "description": "Nombre del representante legal." },
+        "dni_representante": { "type": "string", "pattern": "^[0-9]{8}$", "description": "DNI de 8 dígitos." },
+        "cargo":             { "type": "string" },
+        "telefono":          { "type": "string" },
+        "correo":            { "type": "string", "format": "email" }
+      }
+    },
+
+    "proyecto": {
+      "type": "object",
+      "description": "Datos del proyecto de exploración.",
+      "required": ["nombre_proyecto", "region", "provincia", "distrito", "zona_utm"],
+      "additionalProperties": false,
+      "properties": {
+        "nombre_proyecto":      { "type": "string", "minLength": 1 },
+        "codigo_cm":            { "type": "string", "description": "Código de concesión minera principal." },
+        "region":               { "type": "string" },
+        "provincia":            { "type": "string" },
+        "distrito":             { "type": "string" },
+        "area_total_ha":        { "type": "number", "minimum": 0, "description": "Área total disturbada estimada (ha)." },
+        "zona_utm":             { "type": "integer", "enum": [17, 18, 19] },
+        "datum":                { "type": "string", "default": "WGS 84" },
+        "commodity": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["Cu", "Au", "Ag", "Zn", "Pb", "Mo", "Fe", "Sn", "W", "Li", "U", "polimetalico", "otros"]
+          }
+        },
+        "metodo_exploracion": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "perforacion_diamantina",
+              "perforacion_RC",
+              "trincheras",
+              "calicatas",
+              "geofisica",
+              "mapeo_geologico",
+              "muestreo_superficial",
+              "labores_subterraneas"
+            ]
+          }
+        },
+        "concesiones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "codigo":   { "type": "string" },
+              "nombre":   { "type": "string" },
+              "titular":  { "type": "string" },
+              "area_ha":  { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "proyecto_brownfield": { "type": "boolean", "default": false, "description": "true si hay actividad previa en el área." },
+        "iga_previo_si_existe": {
+          "type": "object",
+          "description": "Contexto opcional — IGA previo en el área, si lo hay. No bloqueante.",
+          "additionalProperties": false,
+          "properties": {
+            "tipo":     { "type": "string", "enum": ["DIA", "EIA-sd", "EIA-d", "FTA", "ITS", "ninguno"] },
+            "rd":       { "type": "string", "description": "Ej: R.D. N° 0290-2023-MINEM-DGAAM" },
+            "fecha_rd": { "type": "string", "format": "date" }
+          }
+        }
+      }
+    },
+
+    "componentes_proyecto": {
+      "type": "object",
+      "description": "Inventario exhaustivo. Toda cantidad por defecto es 0; el cliente llena sólo lo que aplica.",
+      "additionalProperties": false,
+      "properties": {
+
+        "A_exploracion_directa": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "plataformas_perforacion": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":             { "type": "integer", "minimum": 0, "default": 0 },
+                "area_promedio_m2":     { "type": "number",  "minimum": 0 },
+                "pozas_por_plataforma": { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_poza_m3":    { "type": "number",  "minimum": 0 }
+              }
+            },
+            "pozos_perforacion": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":               { "type": "integer", "minimum": 0, "default": 0 },
+                "profundidad_promedio_m": { "type": "number",  "minimum": 0 },
+                "profundidad_maxima_m":   { "type": "number",  "minimum": 0 }
+              }
+            },
+            "trincheras": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":               { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_total_m":       { "type": "number",  "minimum": 0 },
+                "ancho_promedio_m":       { "type": "number",  "minimum": 0 },
+                "profundidad_promedio_m": { "type": "number",  "minimum": 0 }
+              }
+            },
+            "calicatas": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":               { "type": "integer", "minimum": 0, "default": 0 },
+                "profundidad_promedio_m": { "type": "number",  "minimum": 0 },
+                "dimension_m":            { "type": "string", "description": "Ej: 1.5 x 1.5" }
+              }
+            },
+            "labores_subterraneas": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":         { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_total_m": { "type": "number",  "minimum": 0 },
+                "seccion_m2":       { "type": "number",  "minimum": 0 }
+              }
+            },
+            "puntos_geofisica": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad": { "type": "integer", "minimum": 0, "default": 0 },
+                "metodo":   { "type": "string", "description": "Ej: IP, magnetometría, gravimetría." }
+              }
+            },
+            "puntos_muestreo_superficial": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad": { "type": "integer", "minimum": 0, "default": 0 },
+                "tipo":     { "type": "string", "enum": ["chip", "canal", "roca", "suelo", "mixto", ""] }
+              }
+            }
+          }
+        },
+
+        "B_infraestructura_lineal": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "accesos_nuevos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_km":  { "type": "number",  "minimum": 0 },
+                "ancho_m":      { "type": "number",  "minimum": 0 }
+              }
+            },
+            "accesos_existentes_a_usar": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":    { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_km": { "type": "number",  "minimum": 0 }
+              }
+            },
+            "accesos_a_rehabilitar": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":    { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_km": { "type": "number",  "minimum": 0 },
+                "ancho_m":     { "type": "number",  "minimum": 0 }
+              }
+            },
+            "helipuertos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad": { "type": "integer", "minimum": 0, "default": 0 },
+                "area_m2":  { "type": "number",  "minimum": 0 }
+              }
+            },
+            "lineas_electricas": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":    { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_km": { "type": "number",  "minimum": 0 },
+                "tension_kv":  { "type": "number",  "minimum": 0 }
+              }
+            },
+            "cercos_perimetricos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":   { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_m": { "type": "number",  "minimum": 0 }
+              }
+            }
+          }
+        },
+
+        "C_auxiliares": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "campamento_principal":    { "$ref": "#/definitions/campamento" },
+            "campamentos_volantes":    { "$ref": "#/definitions/campamento" },
+            "oficinas":                { "$ref": "#/definitions/area_simple" },
+            "comedores":               { "$ref": "#/definitions/capacidad_personas" },
+            "almacenes_bodegas":       { "$ref": "#/definitions/area_simple" },
+            "talleres_mecanicos":      { "$ref": "#/definitions/area_simple" },
+            "polvorin": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_kg": { "type": "number",  "minimum": 0 },
+                "tipo":         { "type": "string", "description": "Superficial / subterráneo / contenedor." }
+              }
+            },
+            "garitas_control":         { "$ref": "#/definitions/cantidad_solo" },
+            "estaciones_meteorologicas": { "$ref": "#/definitions/cantidad_solo" }
+          }
+        },
+
+        "D_gestion_aguas": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "captaciones_agua": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":   { "type": "integer", "minimum": 0, "default": 0 },
+                "fuente":     { "type": "string", "enum": ["superficial", "subterranea", "mixta", ""] },
+                "caudal_l_s": { "type": "number",  "minimum": 0 }
+              }
+            },
+            "lineas_conduccion_agua": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+                "longitud_m":   { "type": "number",  "minimum": 0 },
+                "diametro_mm":  { "type": "number",  "minimum": 0 }
+              }
+            },
+            "tanques_agua":            { "$ref": "#/definitions/capacidad_m3" },
+            "pozas_sedimentacion":     { "$ref": "#/definitions/capacidad_m3" },
+            "pozas_tratamiento": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":         { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_m3":     { "type": "number",  "minimum": 0 },
+                "tipo_tratamiento": { "type": "string" }
+              }
+            },
+            "ptap_ptar": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":         { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_m3_dia": { "type": "number",  "minimum": 0 },
+                "tipo":             { "type": "string", "enum": ["PTAP", "PTAR", "ambas", ""] }
+              }
+            }
+          }
+        },
+
+        "E_residuos_y_materiales": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "area_residuos_no_peligrosos":    { "$ref": "#/definitions/capacidad_m3" },
+            "area_residuos_peligrosos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_kg": { "type": "number",  "minimum": 0 }
+              }
+            },
+            "microrrellenos_sanitarios":      { "$ref": "#/definitions/capacidad_m3" },
+            "cancha_contencion_hidrocarburos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+                "area_m2":      { "type": "number",  "minimum": 0 },
+                "capacidad_m3": { "type": "number",  "minimum": 0 }
+              }
+            },
+            "depositos_top_soil":             { "$ref": "#/definitions/capacidad_m3" },
+            "depositos_material_excedente_dme": { "$ref": "#/definitions/capacidad_m3" }
+          }
+        },
+
+        "F_energia_y_combustibles": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "subestacion_electrica": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":      { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_kva": { "type": "number",  "minimum": 0 }
+              }
+            },
+            "generadores": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+                "potencia_kw":  { "type": "number",  "minimum": 0 },
+                "combustible":  { "type": "string", "enum": ["diesel", "gasolina", "GLP", "gas_natural", "mixto", ""] }
+              }
+            },
+            "tanques_combustible": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cantidad":          { "type": "integer", "minimum": 0, "default": 0 },
+                "capacidad_gal":     { "type": "number",  "minimum": 0 },
+                "tipo_combustible":  { "type": "string", "enum": ["diesel", "gasolina", "GLP", "petroleo_industrial", "mixto", ""] }
+              }
+            }
+          }
+        },
+
+        "G_otros": {
+          "type": "array",
+          "description": "Componentes que no encajan en categorías A–F.",
+          "items": {
+            "type": "object",
+            "required": ["nombre", "cantidad"],
+            "additionalProperties": false,
+            "properties": {
+              "nombre":      { "type": "string" },
+              "cantidad":    { "type": "integer", "minimum": 0 },
+              "descripcion": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "requerimientos_recursos": {
+      "type": "object",
+      "description": "Totales agregados. Pueden derivarse de categorías D y F si el cliente los deja vacíos.",
+      "additionalProperties": false,
+      "properties": {
+        "agua_m3_dia":         { "type": "number", "minimum": 0 },
+        "fuente_agua":         { "type": "string" },
+        "energia_kw":          { "type": "number", "minimum": 0 },
+        "combustible_gal_dia": { "type": "number", "minimum": 0 }
+      }
+    },
+
+    "residuos": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "solidos_no_peligrosos_kg_dia": { "type": "number", "minimum": 0 },
+        "solidos_peligrosos_kg_dia":    { "type": "number", "minimum": 0 },
+        "liquidos_m3_dia":              { "type": "number", "minimum": 0 },
+        "manejo_propuesto":             { "type": "string" }
+      }
+    },
+
+    "mano_obra": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total":                   { "type": "integer", "minimum": 0 },
+        "local_pct":               { "type": "number", "minimum": 0, "maximum": 100 },
+        "foraneo_pct":             { "type": "number", "minimum": 0, "maximum": 100 },
+        "cronograma_movilizacion": { "type": "string" }
+      }
+    },
+
+    "cronograma": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fecha_inicio":   { "type": "string", "format": "date" },
+        "duracion_meses": { "type": "integer", "minimum": 1 },
+        "etapas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nombre"],
+            "properties": {
+              "nombre":         { "type": "string" },
+              "duracion_meses": { "type": "integer", "minimum": 0 },
+              "descripcion":    { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "componentes_file": {
+      "type": "string",
+      "description": "Ruta relativa o absoluta al archivo georreferenciado de componentes (.kmz / .kml / .shp / .gpkg / .geojson / .csv / .xlsx). Schema interno esperado: nombre, tipo, este, norte, area_m2, longitud_tunel_m."
+    }
+  },
+
+  "definitions": {
+    "cantidad_solo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cantidad": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+    "area_simple": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cantidad": { "type": "integer", "minimum": 0, "default": 0 },
+        "area_m2":  { "type": "number",  "minimum": 0 }
+      }
+    },
+    "capacidad_m3": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cantidad":     { "type": "integer", "minimum": 0, "default": 0 },
+        "capacidad_m3": { "type": "number",  "minimum": 0 }
+      }
+    },
+    "capacidad_personas": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cantidad":           { "type": "integer", "minimum": 0, "default": 0 },
+        "capacidad_personas": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "campamento": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cantidad":           { "type": "integer", "minimum": 0, "default": 0 },
+        "capacidad_personas": { "type": "integer", "minimum": 0 },
+        "area_m2":            { "type": "number",  "minimum": 0 }
+      }
+    }
+  }
+}
