@@ -64,11 +64,18 @@ const BASEMAP_LABEL: Record<BasemapKey, string> = {
 // toggles every layer in the group's array.
 const LAYER_GROUPS = {
   area:        ["area-estudio-fill", "area-estudio-line"],
+  efectiva:    ["area-efectiva-fill", "area-efectiva-line"],
   subbasins:   ["subbasins-fill", "subbasins-line"],
   microcuencas:["microcuencas-fill", "microcuencas-line", "microcuencas-label"],
   rivers:      ["rivers-line"],
   receptores:  ["receptores-fill", "receptores-label"],
-  components:  ["components-fill", "components-label"],
+  components:  [
+    "components-fill",
+    "components-line",
+    "components-polygon-fill",
+    "components-polygon-line",
+    "components-label",
+  ],
   vegetation:  ["vegetation-fill", "vegetation-label"],
   // sampling-station kinds are filtered via filter expression rather
   // than separate layers (see toggleStationKindFilter).
@@ -90,6 +97,8 @@ interface ProjectMapProps {
   areaEstudio?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   /** Visual treatment for the área de estudio outline. */
   areaEstudioStatus?: "draft" | "approved" | "superseded" | null;
+  /** Área efectiva — convex hull + buffer of components. Optional. */
+  areaEfectiva?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   /** Vegetation zones derived from ESA WorldCover. Optional. */
   vegetationZones?: GeoJSON.FeatureCollection | null;
 }
@@ -151,6 +160,7 @@ export default function ProjectMap({
   samplingStations,
   areaEstudio,
   areaEstudioStatus,
+  areaEfectiva,
   vegetationZones,
 }: ProjectMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -159,6 +169,7 @@ export default function ProjectMap({
   // Layer-group visibility (true = visible). Default everything on.
   const [groupVisible, setGroupVisible] = useState<Record<LayerGroup, boolean>>({
     area: true,
+    efectiva: true,
     subbasins: true,
     microcuencas: true,
     rivers: true,
@@ -340,6 +351,33 @@ export default function ProjectMap({
         },
       });
 
+      // Área efectiva — tighter polygon (convex hull + buffer) hugging the
+      // components. Distinct color so it's never confused with the área de
+      // estudio. Coral / orange-pink.
+      map.addSource("area-efectiva", {
+        type: "geojson",
+        data: asAreaFeatureCollection(areaEfectiva),
+      });
+      map.addLayer({
+        id: "area-efectiva-fill",
+        type: "fill",
+        source: "area-efectiva",
+        paint: {
+          "fill-color": "#fb7185", // rose-400
+          "fill-opacity": 0.08,
+        },
+      });
+      map.addLayer({
+        id: "area-efectiva-line",
+        type: "line",
+        source: "area-efectiva",
+        paint: {
+          "line-color": "#e11d48", // rose-600
+          "line-width": 2,
+          "line-dasharray": [2, 2],
+        },
+      });
+
       // Rivers — width scales with strahler order so main channels read
       // through. Tributaries feather into hairlines at low zoom.
       map.addSource("rivers", {
@@ -473,21 +511,62 @@ export default function ProjectMap({
       });
 
       map.addSource("components", { type: "geojson", data: geojson });
+
+      // Color expression reused by point/line/polygon layers.
+      const colorByTipo = [
+        "match",
+        ["get", "tipo"],
+        "plataforma", COLOR_BY_TIPO.plataforma,
+        "acceso",     COLOR_BY_TIPO.acceso,
+        "campamento", COLOR_BY_TIPO.campamento,
+        "tajo",       COLOR_BY_TIPO.tajo,
+        COLOR_BY_TIPO.default,
+      ] as const;
+
+      // Polygons (e.g. tajos, depósitos delineated as Polygon).
+      map.addLayer({
+        id: "components-polygon-fill",
+        type: "fill",
+        source: "components",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: {
+          "fill-color": colorByTipo,
+          "fill-opacity": 0.25,
+        },
+      });
+      map.addLayer({
+        id: "components-polygon-line",
+        type: "line",
+        source: "components",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: {
+          "line-color": colorByTipo,
+          "line-width": 1.5,
+        },
+      });
+
+      // Lines (accesos, líneas eléctricas, cercos, conducciones).
+      map.addLayer({
+        id: "components-line",
+        type: "line",
+        source: "components",
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: {
+          "line-color": colorByTipo,
+          "line-width": 3,
+          "line-opacity": 0.9,
+        },
+      });
+
+      // Points (plataformas, campamentos, calicatas, etc.).
       map.addLayer({
         id: "components-fill",
         type: "circle",
         source: "components",
+        filter: ["==", ["geometry-type"], "Point"],
         paint: {
           "circle-radius": 8,
-          "circle-color": [
-            "match",
-            ["get", "tipo"],
-            "plataforma", COLOR_BY_TIPO.plataforma,
-            "acceso",     COLOR_BY_TIPO.acceso,
-            "campamento", COLOR_BY_TIPO.campamento,
-            "tajo",       COLOR_BY_TIPO.tajo,
-            COLOR_BY_TIPO.default,
-          ],
+          "circle-color": colorByTipo,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#ffffff",
         },
@@ -502,6 +581,11 @@ export default function ProjectMap({
           "text-size": 11,
           "text-offset": [0, 1.4],
           "text-anchor": "top",
+          "symbol-placement": [
+            "case",
+            ["==", ["geometry-type"], "LineString"], "line-center",
+            "point",
+          ],
         },
         paint: {
           "text-color": "#1c1917",
@@ -563,8 +647,8 @@ export default function ProjectMap({
         map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 0 });
       }
 
-      // Component popups
-      map.on("click", "components-fill", (e) => {
+      // Component popups — same handler for points, lines, and polygons.
+      const componentPopup = (e: maplibregl.MapLayerMouseEvent): void => {
         const f = e.features?.[0];
         if (!f) return;
         const props = f.properties as Record<string, unknown>;
@@ -574,18 +658,28 @@ export default function ProjectMap({
             <div>Tipo: ${props.tipo}</div>
             ${props.categoria ? `<div>Categoría: ${props.categoria}</div>` : ""}
             ${props.area_m2 ? `<div>Área: ${props.area_m2} m²</div>` : ""}
+            ${props.longitud_tunel_m ? `<div>Longitud: ${props.longitud_tunel_m} m</div>` : ""}
           </div>`;
         new maplibregl.Popup({ closeButton: true })
           .setLngLat(e.lngLat)
           .setHTML(html)
           .addTo(map);
-      });
-      map.on("mouseenter", "components-fill", () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", "components-fill", () => {
-        map.getCanvas().style.cursor = "";
-      });
+      };
+      const componentLayers: string[] = [
+        "components-fill",
+        "components-line",
+        "components-polygon-fill",
+        "components-polygon-line",
+      ];
+      for (const id of componentLayers) {
+        map.on("click", id, componentPopup);
+        map.on("mouseenter", id, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseleave", id, () => {
+          map.getCanvas().style.cursor = "";
+        });
+      }
 
       // River popup
       map.on("click", "rivers-line", (e) => {
@@ -736,6 +830,9 @@ export default function ProjectMap({
     const areaSrc = map.getSource("area-estudio") as GeoJSONSource | undefined;
     if (areaSrc) areaSrc.setData(asAreaFeatureCollection(areaEstudio));
 
+    const efectivaSrc = map.getSource("area-efectiva") as GeoJSONSource | undefined;
+    if (efectivaSrc) efectivaSrc.setData(asAreaFeatureCollection(areaEfectiva));
+
     const subSrc = map.getSource("subbasins") as GeoJSONSource | undefined;
     if (subSrc) subSrc.setData(asAreaFeatureCollection(areaEstudio));
 
@@ -748,7 +845,7 @@ export default function ProjectMap({
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaColor, vegetationZones]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones]);
 
   // Apply group visibility toggles to the underlying maplibre layers.
   useEffect(() => {
@@ -822,6 +919,7 @@ export default function ProjectMap({
   const hasReceptores = (receptores?.features.length ?? 0) > 0;
   const hasStations = (samplingStations?.features.length ?? 0) > 0;
   const hasArea = areaEstudio !== null && areaEstudio !== undefined;
+  const hasAreaEfectiva = areaEfectiva !== null && areaEfectiva !== undefined;
   const hasComponents = geojson.features.length > 0;
   const hasVegetation = (vegetationZones?.features.length ?? 0) > 0;
 
@@ -886,6 +984,22 @@ export default function ProjectMap({
                 color: areaColor,
                 visible: groupVisible.area,
                 onToggle: () => toggleGroup("area"),
+              }
+            : null,
+          hasAreaEfectiva
+            ? {
+                label: `Área efectiva (${
+                  areaEfectiva?.properties?.area_ha?.toLocaleString
+                    ? Number(areaEfectiva.properties.area_ha).toLocaleString(
+                        "es-PE",
+                        { maximumFractionDigits: 1 },
+                      )
+                    : "—"
+                } ha)`,
+                swatch: "dashedLine" as const,
+                color: "#e11d48",
+                visible: groupVisible.efectiva,
+                onToggle: () => toggleGroup("efectiva"),
               }
             : null,
           hasArea

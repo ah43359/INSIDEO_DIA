@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   CATEGORY_LABELS,
+  type AreaEfectivaRow,
   type AreaEstudioRow,
   type CentroPobladoRow,
   type ComponenteInventario,
@@ -45,6 +46,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     { data: receptoresRows, error: receptoresError },
     { data: stationsRows, error: stationsError },
     { data: vegetationRows, error: vegetationError },
+    { data: areaEfectivaRows, error: areaEfectivaError },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -73,7 +75,11 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     supabase.rpc("get_rivers_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_centros_poblados_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_sampling_stations_for_project", { p_project_id: id }),
-    supabase.rpc("get_vegetation_for_project", { p_project_id: id }),
+    supabase.rpc("get_vegetation_zones", { p_project_id: id, p_source: null }),
+    supabase.rpc("get_area_efectiva_for_project", {
+      p_project_id: id,
+      p_buffer_m: 100,
+    }),
   ]);
 
   if (projectError || !project) {
@@ -166,27 +172,31 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     })),
   };
 
-  interface VegetationRow {
-    id: string;
-    class_code: number;
-    class_name: string;
-    area_ha: number;
-    geom_geojson: string;
-  }
-  const vegetation = (vegetationRows ?? []) as VegetationRow[];
-  const vegetationFc: GeoJSON.FeatureCollection = {
-    type: "FeatureCollection",
-    features: vegetation.map((v) => ({
-      type: "Feature",
-      id: v.id,
-      geometry: JSON.parse(v.geom_geojson) as GeoJSON.Geometry,
-      properties: {
-        class_code: v.class_code,
-        class_name: v.class_name,
-        area_ha: v.area_ha,
-      },
-    })),
-  };
+   interface VegetationRow {
+     id: number;
+     code: string;
+     name: string;
+     source: string;
+     area_ha: number;
+     geom_geojson: string;
+   }
+   const vegetation = (vegetationRows ?? []) as VegetationRow[];
+   const vegetationFc: GeoJSON.FeatureCollection = {
+     type: "FeatureCollection",
+     features: vegetation.map((v) => ({
+       type: "Feature",
+       id: v.id,
+       geometry: JSON.parse(v.geom_geojson) as GeoJSON.Geometry,
+       properties: {
+         class_code: v.code,  // Map MINAM code to expected class_code
+         class_name: v.name,  // Map MINAM name to expected class_name
+         code: v.code,
+         name: v.name,
+         source: v.source,
+         area_ha: v.area_ha,
+       },
+     })),
+   };
 
   const areaFeature: GeoJSON.Feature<
     GeoJSON.MultiPolygon | GeoJSON.Polygon
@@ -199,6 +209,27 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         properties: {
           status: area.status,
           area_ha: area.area_ha,
+        },
+      }
+    : null;
+
+  // Área efectiva — convex hull of components + 100 m buffer, computed
+  // server-side via PostGIS. Always present unless the project has zero
+  // components.
+  const areaEfectiva =
+    ((areaEfectivaRows ?? []) as AreaEfectivaRow[])[0] ?? null;
+  const areaEfectivaFeature: GeoJSON.Feature<
+    GeoJSON.MultiPolygon | GeoJSON.Polygon
+  > | null = areaEfectiva
+    ? {
+        type: "Feature",
+        geometry: JSON.parse(areaEfectiva.geom_geojson) as
+          | GeoJSON.MultiPolygon
+          | GeoJSON.Polygon,
+        properties: {
+          area_ha: areaEfectiva.area_ha,
+          buffer_m: areaEfectiva.buffer_m,
+          components_count: areaEfectiva.components_count,
         },
       }
     : null;
@@ -284,19 +315,55 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             samplingStations={stationsFc}
             areaEstudio={areaFeature}
             areaEstudioStatus={area?.status ?? null}
+            areaEfectiva={areaEfectivaFeature}
             vegetationZones={vegetationFc}
           />
         )}
-        {(microcuencasError || areaError || riversError || receptoresError || stationsError || vegetationError) ? (
+        {(microcuencasError || areaError || areaEfectivaError || riversError || receptoresError || stationsError || vegetationError) ? (
           <p className="mt-2 text-xs text-amber-700">
             Error cargando capas: {
               microcuencasError?.message || areaError?.message ||
+              areaEfectivaError?.message ||
               riversError?.message || receptoresError?.message ||
               stationsError?.message || vegetationError?.message
             }
           </p>
         ) : null}
       </Card>
+
+      {/* Área efectiva — small footprint polygon (convex hull + buffer) */}
+      {areaEfectiva ? (
+        <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold text-stone-700">Área efectiva</h2>
+            <span className="text-xs text-stone-500">
+              Convex hull + {areaEfectiva.buffer_m} m buffer
+            </span>
+          </div>
+          <p className="mb-3 text-xs text-stone-500">
+            Polígono mínimo que envuelve todos los componentes del proyecto.
+            Es el footprint físico — distinto del área de estudio (regulatoria)
+            y del área de influencia (basada en impactos, en una fase posterior).
+          </p>
+          <dl className="grid grid-cols-[160px_1fr] gap-y-2 text-sm">
+            <dt className="text-stone-500">Área</dt>
+            <dd className="text-stone-900 tabular-nums">
+              {areaEfectiva.area_ha.toLocaleString("es-PE", {
+                maximumFractionDigits: 2,
+              })}{" "}
+              ha
+            </dd>
+            <dt className="text-stone-500">Buffer</dt>
+            <dd className="text-stone-900 tabular-nums">
+              {areaEfectiva.buffer_m} m
+            </dd>
+            <dt className="text-stone-500">Componentes</dt>
+            <dd className="text-stone-900 tabular-nums">
+              {areaEfectiva.components_count}
+            </dd>
+          </dl>
+        </section>
+      ) : null}
 
       {/* Área de estudio panel */}
       <AreaEstudioPanel
@@ -308,7 +375,24 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         receptores={receptores}
         stations={stations}
         componentCount={geojson.features.length}
-        vegetationZones={vegetation}
+        vegetationZones={vegetation.map((v) => {
+          // AreaEstudioPanel was typed for ESA WorldCover (numeric
+          // class codes). MINAM uses string codes — coerce to a
+          // numeric hash so the panel still groups them stably.
+          const rawCode = v.code ?? "";
+          const numCode = Number.isFinite(Number(rawCode))
+            ? Number(rawCode)
+            : Array.from(String(rawCode)).reduce(
+                (acc, c) => acc + c.charCodeAt(0),
+                0,
+              );
+          return {
+            id: String(v.id),
+            class_code: numCode,
+            class_name: v.name ?? "",
+            area_ha: v.area_ha,
+          };
+        })}
       />
 
       {/* Inventario by category — collapsed by default; native <details>

@@ -79,6 +79,20 @@ export interface RfiSubmission {
   submitted_at: string;
 }
 
+// ─── Área efectiva (project footprint + small buffer) ────────────────
+//
+// Smallest polygon enclosing all components, computed on-the-fly via
+// PostGIS. Distinct from the área de estudio (regulatory polygon) and
+// the área de influencia (impact-driven polygon, computed later).
+
+export interface AreaEfectivaRow {
+  /** GeoJSON Polygon as text (from st_asgeojson). */
+  geom_geojson: string;
+  area_ha: number;
+  buffer_m: number;
+  components_count: number;
+}
+
 // ─── Área de estudio (baseline-sampling polygon) ──────────────────────
 //
 // NOT to be confused with área de influencia (AID/AII). Área de
