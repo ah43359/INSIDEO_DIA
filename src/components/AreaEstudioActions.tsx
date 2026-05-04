@@ -9,6 +9,7 @@ import {
   enqueueDeriveAreaEstudio,
   enqueueProposeStations,
   enqueueUploadAreaEstudio,
+  enqueueVegetation,
 } from "@/app/(app)/projects/[id]/actions";
 import { createClient } from "@/lib/supabase/client";
 
@@ -100,6 +101,14 @@ export default function AreaEstudioActions({
         receptorBufferM: 5000,
         maxStationsPerKind: 6,
       });
+      handleResult(res);
+    });
+  }
+
+  function runVegetation(): void {
+    setEnqueueError(null);
+    startTransition(async () => {
+      const res = await enqueueVegetation(projectId);
       handleResult(res);
     });
   }
@@ -287,6 +296,29 @@ export default function AreaEstudioActions({
           <span className="text-[10px] text-stone-500">
             Ancla aire / ruido / vibraciones a los receptores sensibles
             del INEI dentro del polígono.
+          </span>
+        </div>
+      </div>
+
+      {/* Vegetation (WorldCover) */}
+      <div className="space-y-2 border-t border-stone-200 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={runVegetation}
+            disabled={pending || !hasAreaEstudio || activeJobId !== null}
+            className="inline-flex items-center rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 shadow-sm hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {pending ? "Encolando…" : "Calcular vegetación"}
+          </button>
+          {!hasAreaEstudio && (
+            <span className="text-xs text-amber-700">
+              Generar área de estudio primero.
+            </span>
+          )}
+          <span className="text-[10px] text-stone-500">
+            Extrae zonas de vegetación del raster ESA WorldCover (10 m) para
+            estratificar las estaciones de biología.
           </span>
         </div>
       </div>

@@ -25,6 +25,15 @@ interface AreaEstudioPanelProps {
   hasAreaEstudio: boolean;
   /** Current number of components_geom rows. */
   componentCount: number;
+  /** Vegetation zones derived from ESA WorldCover. */
+  vegetationZones: VegetationZoneRow[];
+}
+
+interface VegetationZoneRow {
+  id: string;
+  class_code: number;
+  class_name: string;
+  area_ha: number;
 }
 
 const STATUS_LABEL: Record<AreaEstudioRow["status"], string> = {
@@ -57,6 +66,16 @@ const KIND_COLOR: Record<string, string> = {
   agua_subterranea: "#0284c7",
   suelos: "#a16207",
   sedimentos: "#854d0e",
+};
+
+const VEG_CLASS_COLOR: Record<number, string> = {
+  10: "#1b5e20",
+  20: "#4caf50",
+  30: "#cddc39",
+  40: "#ff9800",
+  80: "#0288d1",
+  90: "#8bc34a",
+  95: "#009688",
 };
 
 interface PanelStationGroup {
@@ -92,9 +111,26 @@ export default function AreaEstudioPanel({
   hasComponents,
   hasAreaEstudio,
   componentCount,
+  vegetationZones,
 }: AreaEstudioPanelProps) {
   const stationGroups = groupStations(stations);
   const insideAE = receptores.filter((r) => r.inside_area_estudio).length;
+
+  // Aggregate vegetation zones by class.
+  const vegByClass = new Map<number, { name: string; area_ha: number; patches: number }>();
+  for (const v of vegetationZones) {
+    const existing = vegByClass.get(v.class_code);
+    if (existing) {
+      existing.area_ha += v.area_ha;
+      existing.patches += 1;
+    } else {
+      vegByClass.set(v.class_code, { name: v.class_name, area_ha: v.area_ha, patches: 1 });
+    }
+  }
+  const vegClasses = [...vegByClass.entries()]
+    .map(([code, info]) => ({ code, ...info }))
+    .sort((a, b) => b.area_ha - a.area_ha);
+  const totalVegArea = vegClasses.reduce((s, v) => s + v.area_ha, 0);
   return (
     <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-baseline justify-between">
@@ -273,6 +309,45 @@ export default function AreaEstudioPanel({
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+            Zonas de vegetación (WorldCover)
+          </h3>
+          {vegClasses.length === 0 ? (
+            <p className="text-sm text-stone-500">
+              Vegetación aún no calculada. Se deriva automáticamente al generar
+              el área de estudio.
+            </p>
+          ) : (
+            <div>
+              <p className="mb-2 text-xs text-stone-500 tabular-nums">
+                {vegClasses.length} clases · {totalVegArea.toFixed(1)} ha totales
+              </p>
+              <ul className="space-y-1 text-sm">
+                {vegClasses.map((vc) => (
+                  <li
+                    key={vc.code}
+                    className="flex items-baseline justify-between rounded border border-stone-200 px-2 py-1"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden
+                        className="inline-block h-3 w-3 rounded-sm"
+                        style={{ backgroundColor: VEG_CLASS_COLOR[vc.code] ?? "#78909c" }}
+                      />
+                      <span className="text-stone-700">{vc.name}</span>
+                    </span>
+                    <span className="text-xs text-stone-500 tabular-nums">
+                      {vc.area_ha.toFixed(1)} ha
+                      {vc.patches > 1 && <span className="ml-1">({vc.patches} parches)</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       </div>

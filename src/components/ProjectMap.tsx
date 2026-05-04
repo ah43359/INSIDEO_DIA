@@ -1,8 +1,64 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import maplibregl, { type Map as MlMap, type GeoJSONSource } from "maplibre-gl";
+import maplibregl, { type Map as MlMap, type GeoJSONSource, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+
+// ─── Basemaps ─────────────────────────────────────────────────────────
+// Three options:
+//   default   — Carto Voyager vector tiles (current).
+//   topo      — ESRI World Topo (raster, includes shaded relief).
+//   satellite — ESRI World Imagery (raster, satellite).
+//
+// ESRI tile services are free for low-volume use; attribution required.
+
+type BasemapKey = "default" | "topo" | "satellite";
+
+const BASEMAPS: Record<BasemapKey, string | StyleSpecification> = {
+  default: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+  topo: {
+    version: 8,
+    sources: {
+      "esri-topo": {
+        type: "raster",
+        tiles: [
+          "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        attribution:
+          "Tiles © Esri — Esri, DeLorme, NAVTEQ, TomTom, Intermap, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community",
+      },
+    },
+    layers: [
+      { id: "esri-topo-layer", type: "raster", source: "esri-topo" },
+    ],
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  },
+  satellite: {
+    version: 8,
+    sources: {
+      "esri-imagery": {
+        type: "raster",
+        tiles: [
+          "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        attribution:
+          "Tiles © Esri — Source: Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
+      },
+    },
+    layers: [
+      { id: "esri-imagery-layer", type: "raster", source: "esri-imagery" },
+    ],
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  },
+};
+
+const BASEMAP_LABEL: Record<BasemapKey, string> = {
+  default: "Mapa",
+  topo: "Topográfico",
+  satellite: "Satélite",
+};
 
 // Map of legend "group" ↔ maplibre layer ids. Clicking a legend row
 // toggles every layer in the group's array.
@@ -13,6 +69,7 @@ const LAYER_GROUPS = {
   rivers:      ["rivers-line"],
   receptores:  ["receptores-fill", "receptores-label"],
   components:  ["components-fill", "components-label"],
+  vegetation:  ["vegetation-fill", "vegetation-label"],
   // sampling-station kinds are filtered via filter expression rather
   // than separate layers (see toggleStationKindFilter).
 } as const;
@@ -33,6 +90,8 @@ interface ProjectMapProps {
   areaEstudio?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   /** Visual treatment for the área de estudio outline. */
   areaEstudioStatus?: "draft" | "approved" | "superseded" | null;
+  /** Vegetation zones derived from ESA WorldCover. Optional. */
+  vegetationZones?: GeoJSON.FeatureCollection | null;
 }
 
 // Color & ranking for sampling-station kinds (kept top-level so the
@@ -54,6 +113,17 @@ const COLOR_BY_TIPO: Record<string, string> = {
   campamento: "#2563eb",
   tajo: "#7c3aed",
   default: "#52525b",
+};
+
+// ESA WorldCover 2021 class colors (distinct palette for biology sampling).
+const VEGETATION_CLASS_COLORS: Record<number, string> = {
+  10: "#1b5e20",  // Tree cover — dark green
+  20: "#4caf50",  // Shrubland — medium green
+  30: "#cddc39",  // Grassland — yellow-green
+  40: "#ff9800",  // Cropland — orange
+  80: "#0288d1",  // Permanent water — blue
+  90: "#8bc34a",  // Herbaceous wetland — light green
+  95: "#009688",  // Mangroves — teal
 };
 
 const EMPTY_FC: GeoJSON.FeatureCollection = {
@@ -81,6 +151,7 @@ export default function ProjectMap({
   samplingStations,
   areaEstudio,
   areaEstudioStatus,
+  vegetationZones,
 }: ProjectMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -93,9 +164,14 @@ export default function ProjectMap({
     rivers: true,
     receptores: true,
     components: true,
+    vegetation: true,
   });
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
+  // Vegetation classes: each class togglable independently.
+  const [vegClassVisible, setVegClassVisible] = useState<Record<number, boolean>>({});
+  // Basemap selection — drives the underlying tile source.
+  const [basemap, setBasemap] = useState<BasemapKey>("default");
 
   // The colour of the área de estudio outline communicates status:
   //   draft → amber   approved → emerald   superseded → muted
@@ -107,11 +183,17 @@ export default function ProjectMap({
       : "#d97706";
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current) return;
+
+    // Tear down any prior map (basemap change re-enters this effect).
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+    }
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+      style: BASEMAPS[basemap],
       center: [-75, -10],
       zoom: 5,
       attributionControl: { compact: true },
@@ -191,6 +273,51 @@ export default function ProjectMap({
           "line-color": "#059669",
           "line-width": 2,
           "line-dasharray": [6, 3],
+        },
+      });
+
+      // Vegetation zones — ESA WorldCover classes, colored by class code.
+      // Semi-transparent fills with class labels.
+      map.addSource("vegetation", {
+        type: "geojson",
+        data: vegetationZones ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "vegetation-fill",
+        type: "fill",
+        source: "vegetation",
+        paint: {
+          "fill-color": [
+            "match",
+            ["get", "class_code"],
+            10, VEGETATION_CLASS_COLORS[10],
+            20, VEGETATION_CLASS_COLORS[20],
+            30, VEGETATION_CLASS_COLORS[30],
+            40, VEGETATION_CLASS_COLORS[40],
+            80, VEGETATION_CLASS_COLORS[80],
+            90, VEGETATION_CLASS_COLORS[90],
+            95, VEGETATION_CLASS_COLORS[95],
+            "#78909c",
+          ],
+          "fill-opacity": 0.3,
+        },
+      });
+      map.addLayer({
+        id: "vegetation-label",
+        type: "symbol",
+        source: "vegetation",
+        minzoom: 12,
+        layout: {
+          "text-field": ["concat", ["get", "class_name"], " (", ["to-string", ["get", "area_ha"]], " ha)"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 9,
+          "text-anchor": "center",
+          "text-optional": true,
+        },
+        paint: {
+          "text-color": "#1c1917",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.2,
         },
       });
 
@@ -551,6 +678,29 @@ export default function ProjectMap({
           .setHTML(html)
           .addTo(map);
       });
+
+      // Vegetation zone popup
+      map.on("click", "vegetation-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">${props.class_name}</div>
+            <div>Área: ${props.area_ha} ha</div>
+            <div>Código ESA: ${props.class_code}</div>
+          </div>`;
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+      map.on("mouseenter", "vegetation-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "vegetation-fill", () => {
+        map.getCanvas().style.cursor = "";
+      });
     });
 
     mapRef.current = map;
@@ -558,10 +708,10 @@ export default function ProjectMap({
       map.remove();
       mapRef.current = null;
     };
-    // We deliberately mount once; data updates flow through the effect
-    // below via `setData`.
+    // Re-runs only on basemap change; data updates flow through the
+    // effect below via `setData`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [basemap]);
 
   // Reactively update sources + outline colour when props change.
   useEffect(() => {
@@ -589,13 +739,16 @@ export default function ProjectMap({
     const subSrc = map.getSource("subbasins") as GeoJSONSource | undefined;
     if (subSrc) subSrc.setData(asAreaFeatureCollection(areaEstudio));
 
+    const vegSrc = map.getSource("vegetation") as GeoJSONSource | undefined;
+    if (vegSrc) vegSrc.setData(vegetationZones ?? EMPTY_FC);
+
     if (map.getLayer("area-estudio-fill")) {
       map.setPaintProperty("area-estudio-fill", "fill-color", areaColor);
     }
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaColor]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaColor, vegetationZones]);
 
   // Apply group visibility toggles to the underlying maplibre layers.
   useEffect(() => {
@@ -636,11 +789,33 @@ export default function ProjectMap({
     else map.once("load", apply);
   }, [stationKindVisible]);
 
+  // Apply vegetation-class visibility via a filter expression.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const visibleCodes = Object.entries(vegClassVisible)
+        .filter(([, v]) => v)
+        .map(([k]) => Number(k));
+      const filter: maplibregl.FilterSpecification | null =
+        visibleCodes.length === 0
+          ? ["==", ["get", "class_code"], -1]
+          : ["in", ["get", "class_code"], ["literal", visibleCodes]];
+      for (const id of ["vegetation-fill", "vegetation-label"]) {
+        if (map.getLayer(id)) map.setFilter(id, filter);
+      }
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [vegClassVisible]);
+
   // Toggle handlers
   const toggleGroup = (g: LayerGroup) =>
     setGroupVisible((prev) => ({ ...prev, [g]: !prev[g] }));
   const toggleStationKind = (k: string) =>
     setStationKindVisible((prev) => ({ ...prev, [k]: !prev[k] }));
+  const toggleVegClass = (c: number) =>
+    setVegClassVisible((prev) => ({ ...prev, [c]: !prev[c] }));
 
   const hasMicrocuencas = (microcuencas?.features.length ?? 0) > 0;
   const hasRivers = (rivers?.features.length ?? 0) > 0;
@@ -648,6 +823,7 @@ export default function ProjectMap({
   const hasStations = (samplingStations?.features.length ?? 0) > 0;
   const hasArea = areaEstudio !== null && areaEstudio !== undefined;
   const hasComponents = geojson.features.length > 0;
+  const hasVegetation = (vegetationZones?.features.length ?? 0) > 0;
 
   // Distinct station kinds present, in stable order, for the legend.
   const stationKinds = useMemo<string[]>(() => {
@@ -666,6 +842,24 @@ export default function ProjectMap({
     });
   }, [hasStations, samplingStations]);
 
+  // Distinct vegetation class codes present, in area-descending order.
+  const vegetationClasses = useMemo<{ code: number; name: string; area_ha: number }[]>(() => {
+    if (!hasVegetation || !vegetationZones) return [];
+    const byClass = new Map<number, { name: string; area_ha: number }>();
+    for (const f of vegetationZones.features) {
+      const p = f.properties;
+      if (!p) continue;
+      const code = Number(p.class_code);
+      const existing = byClass.get(code);
+      const area = Number(p.area_ha) || 0;
+      if (existing) existing.area_ha += area;
+      else byClass.set(code, { name: String(p.class_name || `Class ${code}`), area_ha: area });
+    }
+    return [...byClass.entries()]
+      .map(([code, info]) => ({ code, ...info }))
+      .sort((a, b) => b.area_ha - a.area_ha);
+  }, [hasVegetation, vegetationZones]);
+
   // No effect needed to seed defaults — the legend reads
   // `stationKindVisible[k] ?? true`, so any kind not yet in state is
   // treated as visible until the user toggles it.
@@ -682,6 +876,7 @@ export default function ProjectMap({
       ref={containerRef}
       className="relative h-[480px] w-full overflow-hidden rounded-lg border border-stone-200"
     >
+      <BasemapSelector value={basemap} onChange={setBasemap} />
       <MapLegend
         items={[
           hasArea
@@ -745,6 +940,13 @@ export default function ProjectMap({
                 onToggle: () => toggleGroup("components"),
               }
             : null,
+          ...vegetationClasses.map((vc): LegendItem => ({
+            label: `${vc.name} (${vc.area_ha.toFixed(1)} ha)`,
+            swatch: "dot" as const,
+            color: VEGETATION_CLASS_COLORS[vc.code] ?? "#78909c",
+            visible: vegClassVisible[vc.code] ?? true,
+            onToggle: () => toggleVegClass(vc.code),
+          })),
         ].filter((x): x is LegendItem => x !== null)}
       />
     </div>
@@ -838,6 +1040,42 @@ function LegendSwatch({ item }: { item: LegendItem }) {
       );
   }
 }
+
+function BasemapSelector({
+  value,
+  onChange,
+}: {
+  value: BasemapKey;
+  onChange: (b: BasemapKey) => void;
+}) {
+  const opts: BasemapKey[] = ["default", "topo", "satellite"];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Fondo del mapa"
+      className="absolute left-3 top-3 z-10 flex rounded-md border border-stone-200 bg-white/95 p-0.5 text-xs shadow-sm backdrop-blur"
+    >
+      {opts.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          role="radio"
+          aria-checked={value === opt}
+          onClick={() => onChange(opt)}
+          className={
+            "rounded px-2 py-1 transition-colors " +
+            (value === opt
+              ? "bg-stone-900 text-white"
+              : "text-stone-600 hover:bg-stone-100")
+          }
+        >
+          {BASEMAP_LABEL[opt]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 
 function MapLegend({ items }: { items: LegendItem[] }) {
   if (items.length === 0) return null;

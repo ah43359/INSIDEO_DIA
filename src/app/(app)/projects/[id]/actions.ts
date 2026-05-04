@@ -167,3 +167,18 @@ export async function enqueueUploadAreaEstudio(
   }
   return { ok: true, jobId: String(data) };
 }
+
+// ─── Vegetation (enqueue) ──────────────────────────────────────────────
+
+export async function enqueueVegetation(
+  projectId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("enqueue_vegetation", {
+    p_project_id: projectId,
+  });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true, jobId: String(data) };
+}

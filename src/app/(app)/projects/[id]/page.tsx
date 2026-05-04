@@ -44,6 +44,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     { data: riversRows, error: riversError },
     { data: receptoresRows, error: receptoresError },
     { data: stationsRows, error: stationsError },
+    { data: vegetationRows, error: vegetationError },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -72,6 +73,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     supabase.rpc("get_rivers_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_centros_poblados_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_sampling_stations_for_project", { p_project_id: id }),
+    supabase.rpc("get_vegetation_for_project", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -160,6 +162,28 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         rationale: s.rationale,
         target_receptor_nombre: s.target_receptor_nombre,
         parameters: s.parameters,
+      },
+    })),
+  };
+
+  interface VegetationRow {
+    id: string;
+    class_code: number;
+    class_name: string;
+    area_ha: number;
+    geom_geojson: string;
+  }
+  const vegetation = (vegetationRows ?? []) as VegetationRow[];
+  const vegetationFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: vegetation.map((v) => ({
+      type: "Feature",
+      id: v.id,
+      geometry: JSON.parse(v.geom_geojson) as GeoJSON.Geometry,
+      properties: {
+        class_code: v.class_code,
+        class_name: v.class_name,
+        area_ha: v.area_ha,
       },
     })),
   };
@@ -260,14 +284,15 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             samplingStations={stationsFc}
             areaEstudio={areaFeature}
             areaEstudioStatus={area?.status ?? null}
+            vegetationZones={vegetationFc}
           />
         )}
-        {(microcuencasError || areaError || riversError || receptoresError || stationsError) ? (
+        {(microcuencasError || areaError || riversError || receptoresError || stationsError || vegetationError) ? (
           <p className="mt-2 text-xs text-amber-700">
             Error cargando capas: {
               microcuencasError?.message || areaError?.message ||
               riversError?.message || receptoresError?.message ||
-              stationsError?.message
+              stationsError?.message || vegetationError?.message
             }
           </p>
         ) : null}
@@ -283,6 +308,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         receptores={receptores}
         stations={stations}
         componentCount={geojson.features.length}
+        vegetationZones={vegetation}
       />
 
       {/* Inventario by category — collapsed by default; native <details>
