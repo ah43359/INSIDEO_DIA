@@ -76,7 +76,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     supabase.rpc("get_rivers_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_centros_poblados_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_sampling_stations_for_project", { p_project_id: id }),
-    supabase.rpc("get_vegetation_zones", { p_project_id: id, p_source: null }),
+    supabase.rpc("get_vegetation_for_project", { p_project_id: id }),
     supabase.rpc("get_area_efectiva_for_project", {
       p_project_id: id,
       p_buffer_m: 100,
