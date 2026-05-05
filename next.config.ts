@@ -22,7 +22,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   generateEtags: true,
   reactProductionProfiling: false,
-  serverExternalPackages: [],
+  serverExternalPackages: ["docx", "proj4"],
   logging: {
     fetches: {
       fullUrl: true,
