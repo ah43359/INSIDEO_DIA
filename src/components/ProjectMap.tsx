@@ -75,6 +75,7 @@ const LAYER_GROUPS = {
     "components-polygon-fill",
     "components-polygon-line",
     "components-label",
+    "components-label-line",
   ],
   vegetation:  ["vegetation-fill", "vegetation-label"],
   // sampling-station kinds are filtered via filter expression rather
@@ -594,17 +595,31 @@ export default function ProjectMap({
         id: "components-label",
         type: "symbol",
         source: "components",
+        filter: ["!=", ["geometry-type"], "LineString"],
         layout: {
           "text-field": ["get", "nombre"],
           "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
           "text-size": 11,
           "text-offset": [0, 1.4],
           "text-anchor": "top",
-          "symbol-placement": [
-            "case",
-            ["==", ["geometry-type"], "LineString"], "line-center",
-            "point",
-          ],
+          "symbol-placement": "point",
+        },
+        paint: {
+          "text-color": "#1c1917",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      });
+      map.addLayer({
+        id: "components-label-line",
+        type: "symbol",
+        source: "components",
+        filter: ["==", ["geometry-type"], "LineString"],
+        layout: {
+          "text-field": ["get", "nombre"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 11,
+          "symbol-placement": "line-center",
         },
         paint: {
           "text-color": "#1c1917",
