@@ -190,7 +190,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
        properties: {
          class_code: v.class_code,
          class_name: v.class_name,
-         code: v.class_code?.toString() ?? "",
+         code: v.class_code?.toString() ?? v.class_name ?? "",
          name: v.class_name ?? "",
          source: "MINAM",
          area_ha: v.area_ha,

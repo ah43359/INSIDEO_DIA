@@ -128,6 +128,7 @@ const COLOR_BY_TIPO: Record<string, string> = {
 // stay as their string form ("10", "20", …); MINAM codes can be added
 // here as the palette is finalized.
 const VEGETATION_CLASS_COLORS: Record<string, string> = {
+  // ESA WorldCover numeric codes
   "10": "#1b5e20",  // Tree cover — dark green
   "20": "#4caf50",  // Shrubland — medium green
   "30": "#cddc39",  // Grassland — yellow-green
@@ -135,6 +136,14 @@ const VEGETATION_CLASS_COLORS: Record<string, string> = {
   "80": "#0288d1",  // Permanent water — blue
   "90": "#8bc34a",  // Herbaceous wetland — light green
   "95": "#009688",  // Mangroves — teal
+  // MINAM 2015 Simbolo codes
+  "Pj":    "#d4a017",  // Pajonal andino — golden yellow
+  "Agri":  "#f97316",  // Agricultura costera y andina — orange
+  "Ma":    "#84cc16",  // Matorral arbustivo — lime green
+  "Br-al": "#166534",  // Bosque relicto altoandino — dark green
+  "Br-me": "#4ade80",  // Bosque relicto mesoandino — medium green
+  "L/Co":  "#38bdf8",  // Lagunas, lagos y cochas — sky blue
+  "Bh-MBT":"#15803d",  "Bh-MBS":"#16a34a",  "Bp-A":  "#22c55e",
 };
 
 const EMPTY_FC: GeoJSON.FeatureCollection = {
@@ -302,8 +311,8 @@ export default function ProjectMap({
         source: "vegetation",
         paint: {
           "fill-color": [
-            "match",
-            ["to-string", ["get", "class_code"]],
+            "match", ["get", "code"],
+            // ESA WorldCover
             "10", VEGETATION_CLASS_COLORS["10"],
             "20", VEGETATION_CLASS_COLORS["20"],
             "30", VEGETATION_CLASS_COLORS["30"],
@@ -311,6 +320,13 @@ export default function ProjectMap({
             "80", VEGETATION_CLASS_COLORS["80"],
             "90", VEGETATION_CLASS_COLORS["90"],
             "95", VEGETATION_CLASS_COLORS["95"],
+            // MINAM 2015
+            "Pj",    VEGETATION_CLASS_COLORS["Pj"],
+            "Agri",  VEGETATION_CLASS_COLORS["Agri"],
+            "Ma",    VEGETATION_CLASS_COLORS["Ma"],
+            "Br-al", VEGETATION_CLASS_COLORS["Br-al"],
+            "Br-me", VEGETATION_CLASS_COLORS["Br-me"],
+            "L/Co",  VEGETATION_CLASS_COLORS["L/Co"],
             "#78909c",
           ],
           "fill-opacity": 0.3,
@@ -899,8 +915,8 @@ export default function ProjectMap({
         .map(([k]) => k);
       const filter: maplibregl.FilterSpecification | null =
         visibleCodes.length === 0
-          ? ["==", ["to-string", ["get", "class_code"]], "__none__"]
-          : ["in", ["to-string", ["get", "class_code"]], ["literal", visibleCodes]];
+          ? ["==", ["get", "code"], "__none__"]
+          : ["in", ["get", "code"], ["literal", visibleCodes]];
       for (const id of ["vegetation-fill", "vegetation-label"]) {
         if (map.getLayer(id)) map.setFilter(id, filter);
       }
@@ -950,7 +966,7 @@ export default function ProjectMap({
     for (const f of vegetationZones.features) {
       const p = f.properties;
       if (!p) continue;
-      const code = String(p.class_code ?? "");
+      const code = String(p.code ?? "");
       if (!code) continue;
       const existing = byClass.get(code);
       const area = Number(p.area_ha) || 0;
