@@ -910,11 +910,14 @@ export default function ProjectMap({
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      const visibleCodes = Object.entries(vegClassVisible)
-        .filter(([, v]) => v)
-        .map(([k]) => k);
+      const entries = Object.entries(vegClassVisible);
+      const visibleCodes = entries.filter(([, v]) => v).map(([k]) => k);
+      // Empty state = no user choices yet → show all (null removes the filter).
+      // Only hide when the user has explicitly toggled every class off.
       const filter: maplibregl.FilterSpecification | null =
-        visibleCodes.length === 0
+        entries.length === 0
+          ? null
+          : visibleCodes.length === 0
           ? ["==", ["get", "code"], "__none__"]
           : ["in", ["get", "code"], ["literal", visibleCodes]];
       for (const id of ["vegetation-fill", "vegetation-label"]) {
