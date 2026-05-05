@@ -28,9 +28,9 @@ export async function POST(
   const supabase = await createClient();
 
   // Verify session
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized", detail: authError?.message }, { status: 401 });
   }
 
   // Parse optional body (map screenshot)
@@ -51,7 +51,13 @@ export async function POST(
 
   if (projectError || !project) {
     return NextResponse.json(
-      { error: "Proyecto no encontrado", detail: projectError?.message },
+      {
+        error: "Proyecto no encontrado",
+        detail: projectError?.message,
+        code: projectError?.code,
+        queried_id: id,
+        user_id: user.id,
+      },
       { status: 404 },
     );
   }
