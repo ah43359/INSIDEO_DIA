@@ -114,6 +114,7 @@ const STATION_COLORS: Record<string, string> = {
   agua_subterranea: "#0284c7", // darker sky
   suelos:           "#a16207", // earth
   sedimentos:       "#854d0e", // brown
+  flora_fauna:      "#16a34a", // green — biological evaluation
   default:          "#1f2937", // graphite
 };
 
@@ -126,8 +127,8 @@ const COLOR_BY_TIPO: Record<string, string> = {
 };
 
 // Class colors keyed by string class_code. Numeric ESA WorldCover codes
-// stay as their string form ("10", "20", …); MINAM codes can be added
-// here as the palette is finalized.
+// stay as their string form ("10", "20", …); MINAM Simbolo codes are
+// listed below — each ecosystem gets a distinct hue.
 const VEGETATION_CLASS_COLORS: Record<string, string> = {
   // ESA WorldCover numeric codes
   "10": "#1b5e20",  // Tree cover — dark green
@@ -137,15 +138,60 @@ const VEGETATION_CLASS_COLORS: Record<string, string> = {
   "80": "#0288d1",  // Permanent water — blue
   "90": "#8bc34a",  // Herbaceous wetland — light green
   "95": "#009688",  // Mangroves — teal
-  // MINAM 2015 Simbolo codes
-  "Pj":    "#d4a017",  // Pajonal andino — golden yellow
-  "Agri":  "#f97316",  // Agricultura costera y andina — orange
-  "Ma":    "#84cc16",  // Matorral arbustivo — lime green
-  "Br-al": "#166534",  // Bosque relicto altoandino — dark green
-  "Br-me": "#4ade80",  // Bosque relicto mesoandino — medium green
-  "L/Co":  "#38bdf8",  // Lagunas, lagos y cochas — sky blue
-  "Bh-MBT":"#15803d",  "Bh-MBS":"#16a34a",  "Bp-A":  "#22c55e",
+  // MINAM 2015 — Pajonales / Pastizales
+  "Pj":     "#d4a017",  // Pajonal andino — golden yellow
+  "Pjh":    "#eab308",  // Pajonal de puna húmeda
+  // MINAM 2015 — Bosques relictos
+  "Br-al":  "#166534",  // Bosque relicto altoandino
+  "Br-me":  "#15803d",  // Bosque relicto mesoandino
+  "Bp":     "#14532d",  // Bosque de polylepis
+  "Bp-A":   "#22c55e",  // Bosque pluvial andino
+  // MINAM 2015 — Bosques húmedos / secos
+  "Bh-MBT": "#0f766e",  // Bosque húmedo de montaña basimontano
+  "Bh-MBS": "#10b981",  // Bosque húmedo de montaña subandino
+  "Bh-T":   "#059669",  // Bosque húmedo tropical (Amazonía)
+  "Bs-mo":  "#a16207",  // Bosque seco de montaña
+  "Bs-MA":  "#b45309",  // Bosque seco macro-andino
+  "Bs-T":   "#92400e",  // Bosque seco tropical
+  // MINAM 2015 — Matorrales
+  "Ma":     "#84cc16",  // Matorral arbustivo
+  "Ma-DS":  "#bef264",  // Matorral arbustivo desértico
+  "Ma-T":   "#4d7c0f",  // Matorral del piedemonte
+  // MINAM 2015 — Humedales / Aguas
+  "Bof":    "#2dd4bf",  // Bofedal
+  "L/Co":   "#38bdf8",  // Lagunas, lagos y cochas
+  "Pa":     "#14b8a6",  // Pantano
+  // MINAM 2015 — Áreas intervenidas / Otros
+  "Agri":   "#f97316",  // Agricultura costera y andina
+  "Agro":   "#fb923c",  // Agropecuario
+  "Cul":    "#fdba74",  // Cultivos
+  "Pc":     "#65a30d",  // Plantación forestal
+  "ZU":     "#dc2626",  // Zonas urbanas
+  // MINAM 2015 — Sin vegetación / Especiales
+  "Roq":    "#71717a",  // Roquedales
+  "D":      "#fde68a",  // Desierto costero
+  "Lo":     "#facc15",  // Loma costera
+  "Tu":     "#a78bfa",  // Tundra
+  "Gn":     "#e0e7ff",  // Glaciar / nieve
 };
+
+const VEGETATION_FALLBACK_COLOR = "#94a3b8"; // slate-400 for unknowns
+
+/**
+ * Build a MapLibre `match` paint expression from VEGETATION_CLASS_COLORS
+ * so the layer config and the colour map don't drift apart.
+ */
+function buildVegetationFillColorExpression(): object {
+  const expr: (string | (string | unknown[])[] | unknown)[] = [
+    "match",
+    ["get", "code"],
+  ];
+  for (const [code, color] of Object.entries(VEGETATION_CLASS_COLORS)) {
+    expr.push(code, color);
+  }
+  expr.push(VEGETATION_FALLBACK_COLOR);
+  return expr;
+}
 
 const EMPTY_FC: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -311,26 +357,8 @@ export default function ProjectMap({
         type: "fill",
         source: "vegetation",
         paint: {
-          "fill-color": [
-            "match", ["get", "code"],
-            // ESA WorldCover
-            "10", VEGETATION_CLASS_COLORS["10"],
-            "20", VEGETATION_CLASS_COLORS["20"],
-            "30", VEGETATION_CLASS_COLORS["30"],
-            "40", VEGETATION_CLASS_COLORS["40"],
-            "80", VEGETATION_CLASS_COLORS["80"],
-            "90", VEGETATION_CLASS_COLORS["90"],
-            "95", VEGETATION_CLASS_COLORS["95"],
-            // MINAM 2015
-            "Pj",    VEGETATION_CLASS_COLORS["Pj"],
-            "Agri",  VEGETATION_CLASS_COLORS["Agri"],
-            "Ma",    VEGETATION_CLASS_COLORS["Ma"],
-            "Br-al", VEGETATION_CLASS_COLORS["Br-al"],
-            "Br-me", VEGETATION_CLASS_COLORS["Br-me"],
-            "L/Co",  VEGETATION_CLASS_COLORS["L/Co"],
-            "#78909c",
-          ],
-          "fill-opacity": 0.3,
+          "fill-color": buildVegetationFillColorExpression(),
+          "fill-opacity": 0.45,
         },
       });
       map.addLayer({
@@ -493,6 +521,7 @@ export default function ProjectMap({
             "agua_subterranea", 9,
             "suelos",           7,
             "sedimentos",       8,
+            "flora_fauna",      9,
             8,
           ],
           "circle-color": [
@@ -505,6 +534,7 @@ export default function ProjectMap({
             "agua_subterranea", STATION_COLORS.agua_subterranea,
             "suelos",           STATION_COLORS.suelos,
             "sedimentos",       STATION_COLORS.sedimentos,
+            "flora_fauna",      STATION_COLORS.flora_fauna,
             STATION_COLORS.default,
           ],
           "circle-stroke-width": 2.5,
@@ -970,7 +1000,7 @@ export default function ProjectMap({
     }
     const order = ["aire", "ruido", "vibraciones",
                    "agua_superficial", "agua_subterranea",
-                   "suelos", "sedimentos"];
+                   "suelos", "sedimentos", "flora_fauna"];
     return [...seen].sort((a, b) => {
       const ai = order.indexOf(a); const bi = order.indexOf(b);
       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
@@ -1136,6 +1166,7 @@ const SAMPLING_KIND_LABEL: Record<string, string> = {
   agua_subterranea: "Agua subterránea",
   suelos: "Suelos",
   sedimentos: "Sedimentos",
+  flora_fauna: "Flora y fauna",
 };
 
 function LegendSwatch({ item }: { item: LegendItem }) {

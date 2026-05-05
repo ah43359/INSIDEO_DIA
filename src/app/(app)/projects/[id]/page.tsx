@@ -175,7 +175,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
    interface VegetationRow {
      id: string;
-     class_code: number | null;
+     class_code: string | null;   // MINAM Simbolo (Pj, Br-al, etc.)
      class_name: string;
      area_ha: number | null;
      geom_geojson: string;
@@ -190,7 +190,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
        properties: {
          class_code: v.class_code,
          class_name: v.class_name,
-         code: v.class_code?.toString() ?? v.class_name ?? "",
+         code: v.class_code ?? v.class_name ?? "",
          name: v.class_name ?? "",
          source: "MINAM",
          area_ha: v.area_ha,
