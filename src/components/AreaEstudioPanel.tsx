@@ -31,7 +31,7 @@ interface AreaEstudioPanelProps {
 
 interface VegetationZoneRow {
   id: string;
-  class_code: number;
+  class_code: string;
   class_name: string;
   area_ha: number;
 }
@@ -68,14 +68,14 @@ const KIND_COLOR: Record<string, string> = {
   sedimentos: "#854d0e",
 };
 
-const VEG_CLASS_COLOR: Record<number, string> = {
-  10: "#1b5e20",
-  20: "#4caf50",
-  30: "#cddc39",
-  40: "#ff9800",
-  80: "#0288d1",
-  90: "#8bc34a",
-  95: "#009688",
+const VEG_CLASS_COLOR: Record<string, string> = {
+  "10": "#1b5e20",
+  "20": "#4caf50",
+  "30": "#cddc39",
+  "40": "#ff9800",
+  "80": "#0288d1",
+  "90": "#8bc34a",
+  "95": "#009688",
 };
 
 interface PanelStationGroup {
@@ -117,7 +117,7 @@ export default function AreaEstudioPanel({
   const insideAE = receptores.filter((r) => r.inside_area_estudio).length;
 
   // Aggregate vegetation zones by class.
-  const vegByClass = new Map<number, { name: string; area_ha: number; patches: number }>();
+  const vegByClass = new Map<string, { name: string; area_ha: number; patches: number }>();
   for (const v of vegetationZones) {
     const existing = vegByClass.get(v.class_code);
     if (existing) {

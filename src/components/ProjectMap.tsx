@@ -124,15 +124,17 @@ const COLOR_BY_TIPO: Record<string, string> = {
   default: "#52525b",
 };
 
-// ESA WorldCover 2021 class colors (distinct palette for biology sampling).
-const VEGETATION_CLASS_COLORS: Record<number, string> = {
-  10: "#1b5e20",  // Tree cover — dark green
-  20: "#4caf50",  // Shrubland — medium green
-  30: "#cddc39",  // Grassland — yellow-green
-  40: "#ff9800",  // Cropland — orange
-  80: "#0288d1",  // Permanent water — blue
-  90: "#8bc34a",  // Herbaceous wetland — light green
-  95: "#009688",  // Mangroves — teal
+// Class colors keyed by string class_code. Numeric ESA WorldCover codes
+// stay as their string form ("10", "20", …); MINAM codes can be added
+// here as the palette is finalized.
+const VEGETATION_CLASS_COLORS: Record<string, string> = {
+  "10": "#1b5e20",  // Tree cover — dark green
+  "20": "#4caf50",  // Shrubland — medium green
+  "30": "#cddc39",  // Grassland — yellow-green
+  "40": "#ff9800",  // Cropland — orange
+  "80": "#0288d1",  // Permanent water — blue
+  "90": "#8bc34a",  // Herbaceous wetland — light green
+  "95": "#009688",  // Mangroves — teal
 };
 
 const EMPTY_FC: GeoJSON.FeatureCollection = {
@@ -180,7 +182,7 @@ export default function ProjectMap({
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
   // Vegetation classes: each class togglable independently.
-  const [vegClassVisible, setVegClassVisible] = useState<Record<number, boolean>>({});
+  const [vegClassVisible, setVegClassVisible] = useState<Record<string, boolean>>({});
   // Basemap selection — drives the underlying tile source.
   const [basemap, setBasemap] = useState<BasemapKey>("default");
 
@@ -208,6 +210,7 @@ export default function ProjectMap({
       center: [-75, -10],
       zoom: 5,
       attributionControl: { compact: true },
+      canvasContextAttributes: { preserveDrawingBuffer: true },
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
@@ -300,14 +303,14 @@ export default function ProjectMap({
         paint: {
           "fill-color": [
             "match",
-            ["get", "class_code"],
-            10, VEGETATION_CLASS_COLORS[10],
-            20, VEGETATION_CLASS_COLORS[20],
-            30, VEGETATION_CLASS_COLORS[30],
-            40, VEGETATION_CLASS_COLORS[40],
-            80, VEGETATION_CLASS_COLORS[80],
-            90, VEGETATION_CLASS_COLORS[90],
-            95, VEGETATION_CLASS_COLORS[95],
+            ["to-string", ["get", "class_code"]],
+            "10", VEGETATION_CLASS_COLORS["10"],
+            "20", VEGETATION_CLASS_COLORS["20"],
+            "30", VEGETATION_CLASS_COLORS["30"],
+            "40", VEGETATION_CLASS_COLORS["40"],
+            "80", VEGETATION_CLASS_COLORS["80"],
+            "90", VEGETATION_CLASS_COLORS["90"],
+            "95", VEGETATION_CLASS_COLORS["95"],
             "#78909c",
           ],
           "fill-opacity": 0.3,
@@ -893,11 +896,11 @@ export default function ProjectMap({
     const apply = () => {
       const visibleCodes = Object.entries(vegClassVisible)
         .filter(([, v]) => v)
-        .map(([k]) => Number(k));
+        .map(([k]) => k);
       const filter: maplibregl.FilterSpecification | null =
         visibleCodes.length === 0
-          ? ["==", ["get", "class_code"], -1]
-          : ["in", ["get", "class_code"], ["literal", visibleCodes]];
+          ? ["==", ["to-string", ["get", "class_code"]], "__none__"]
+          : ["in", ["to-string", ["get", "class_code"]], ["literal", visibleCodes]];
       for (const id of ["vegetation-fill", "vegetation-label"]) {
         if (map.getLayer(id)) map.setFilter(id, filter);
       }
@@ -911,7 +914,7 @@ export default function ProjectMap({
     setGroupVisible((prev) => ({ ...prev, [g]: !prev[g] }));
   const toggleStationKind = (k: string) =>
     setStationKindVisible((prev) => ({ ...prev, [k]: !prev[k] }));
-  const toggleVegClass = (c: number) =>
+  const toggleVegClass = (c: string) =>
     setVegClassVisible((prev) => ({ ...prev, [c]: !prev[c] }));
 
   const hasMicrocuencas = (microcuencas?.features.length ?? 0) > 0;
@@ -941,13 +944,14 @@ export default function ProjectMap({
   }, [hasStations, samplingStations]);
 
   // Distinct vegetation class codes present, in area-descending order.
-  const vegetationClasses = useMemo<{ code: number; name: string; area_ha: number }[]>(() => {
+  const vegetationClasses = useMemo<{ code: string; name: string; area_ha: number }[]>(() => {
     if (!hasVegetation || !vegetationZones) return [];
-    const byClass = new Map<number, { name: string; area_ha: number }>();
+    const byClass = new Map<string, { name: string; area_ha: number }>();
     for (const f of vegetationZones.features) {
       const p = f.properties;
       if (!p) continue;
-      const code = Number(p.class_code);
+      const code = String(p.class_code ?? "");
+      if (!code) continue;
       const existing = byClass.get(code);
       const area = Number(p.area_ha) || 0;
       if (existing) existing.area_ha += area;

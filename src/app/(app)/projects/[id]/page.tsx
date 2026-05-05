@@ -15,6 +15,7 @@ import {
 } from "@/lib/types";
 import AreaEstudioPanel from "@/components/AreaEstudioPanel";
 import ProjectMap from "@/components/ProjectMap";
+import ReportesPanel from "@/components/ReportesPanel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -375,25 +376,16 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         receptores={receptores}
         stations={stations}
         componentCount={geojson.features.length}
-        vegetationZones={vegetation.map((v) => {
-          // AreaEstudioPanel was typed for ESA WorldCover (numeric
-          // class codes). MINAM uses string codes — coerce to a
-          // numeric hash so the panel still groups them stably.
-          const rawCode = v.code ?? "";
-          const numCode = Number.isFinite(Number(rawCode))
-            ? Number(rawCode)
-            : Array.from(String(rawCode)).reduce(
-                (acc, c) => acc + c.charCodeAt(0),
-                0,
-              );
-          return {
-            id: String(v.id),
-            class_code: numCode,
-            class_name: v.name ?? "",
-            area_ha: v.area_ha,
-          };
-        })}
+        vegetationZones={vegetation.map((v) => ({
+          id: String(v.id),
+          class_code: v.code ?? "",
+          class_name: v.name ?? "",
+          area_ha: v.area_ha,
+        }))}
       />
+
+      {/* Reportes panel */}
+      <ReportesPanel projectId={id} projectName={p.nombre_proyecto} />
 
       {/* Inventario by category — collapsed by default; native <details>
           gives free keyboard support and no client-component overhead. */}
