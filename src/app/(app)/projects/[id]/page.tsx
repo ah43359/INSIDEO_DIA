@@ -174,11 +174,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
   };
 
    interface VegetationRow {
-     id: number;
-     code: string;
-     name: string;
-     source: string;
-     area_ha: number;
+     id: string;
+     class_code: number | null;
+     class_name: string;
+     area_ha: number | null;
      geom_geojson: string;
    }
    const vegetation = (vegetationRows ?? []) as VegetationRow[];
@@ -189,11 +188,11 @@ export default async function ProjectDetailPage({ params }: PageProps) {
        id: v.id,
        geometry: JSON.parse(v.geom_geojson) as GeoJSON.Geometry,
        properties: {
-         class_code: v.code,  // Map MINAM code to expected class_code
-         class_name: v.name,  // Map MINAM name to expected class_name
-         code: v.code,
-         name: v.name,
-         source: v.source,
+         class_code: v.class_code,
+         class_name: v.class_name,
+         code: v.class_code?.toString() ?? "",
+         name: v.class_name ?? "",
+         source: "MINAM",
          area_ha: v.area_ha,
        },
      })),
@@ -378,9 +377,9 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         componentCount={geojson.features.length}
         vegetationZones={vegetation.map((v) => ({
           id: String(v.id),
-          class_code: v.code ?? "",
-          class_name: v.name ?? "",
-          area_ha: v.area_ha,
+          class_code: v.class_code?.toString() ?? "",
+          class_name: v.class_name ?? "",
+          area_ha: v.area_ha ?? 0,
         }))}
       />
 
