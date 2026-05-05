@@ -45,12 +45,15 @@ export async function POST(
   // Load project + client
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select("id, nombre, numero_proyecto, clientes(razon_social, domicilio)")
+    .select("*, clientes(razon_social, domicilio)")
     .eq("id", id)
     .single();
 
   if (projectError || !project) {
-    return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Proyecto no encontrado", detail: projectError?.message },
+      { status: 404 },
+    );
   }
 
   // Load sampling stations
