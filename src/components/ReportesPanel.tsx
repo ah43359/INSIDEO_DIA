@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 interface ReportesPanelProps {
@@ -112,6 +113,21 @@ export default function ReportesPanel({ projectId, projectName }: ReportesPanelP
           El documento incluye el mapa actual del proyecto como figura de referencia.
           Las estaciones de flora/fauna e hidrobiología se generan como tablas vacías (por completar).
         </p>
+
+        <div className="flex items-center justify-between rounded-md border border-stone-200 bg-stone-50 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-stone-800">Capítulo 2 — Descripción del Proyecto</p>
+            <p className="text-xs text-stone-500">
+              Editor con prellenado automático desde los componentes del proyecto · DIA / MDIA
+            </p>
+          </div>
+          <Link
+            href={`/projects/${projectId}/cap2`}
+            className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-800 transition hover:bg-stone-100"
+          >
+            Abrir editor
+          </Link>
+        </div>
       </div>
     </section>
   );
