@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Cap2Editor from "@/components/cap2/Cap2Editor";
-import { deriveCap2Prefill } from "@/lib/cap2/derive";
+import { deriveCap2Prefill } from "@/lib/dia/cap2/derive";
 import type {
   AreaEstudioRow,
   Cliente,

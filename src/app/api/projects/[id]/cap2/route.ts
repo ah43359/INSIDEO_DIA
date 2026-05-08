@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buildCap2Document } from "@/lib/cap2/document";
-import { fromExportV7 } from "@/lib/cap2/state";
+import { buildCap2Document } from "@/lib/dia/cap2/document";
+import { fromExportV7 } from "@/lib/dia/cap2/state";
 
 interface RouteParams {
   params: Promise<{ id: string }>;

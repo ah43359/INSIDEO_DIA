@@ -13,15 +13,15 @@ import {
   type SectionNode,
   SECTIONS,
   findSection,
-} from "@/lib/cap2/fields";
+} from "@/lib/dia/cap2/fields";
 import {
   type Cap2State,
   type IntroType,
   type UtmZone,
   fromExportV7,
   toExportV7,
-} from "@/lib/cap2/state";
-import { findBasin } from "@/lib/cap2/utm";
+} from "@/lib/dia/cap2/state";
+import { findBasin } from "@/lib/dia/cap2/utm";
 
 interface Cap2EditorProps {
   projectId: string;
