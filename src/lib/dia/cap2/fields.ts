@@ -6,12 +6,17 @@
 // round-trip JSON state between this app and the standalone tool via its
 // "Imp JSON" / "Exp JSON" buttons (export shape `version: 7`).
 
-export interface IntroField {
-  readonly key: string;
-  readonly label: string;
-  readonly placeholder: string;
-  readonly group: IntroGroup;
-}
+import type {
+  DgField,
+  IntroField as BaseIntroField,
+  SectionNode as BaseSectionNode,
+} from "@/lib/dia/framework/manifest";
+import {
+  findSection as findSectionGeneric,
+  collectSectionIds,
+} from "@/lib/dia/framework/manifest";
+
+export type { DgField };
 
 export type IntroGroup =
   | "Proyecto"
@@ -20,6 +25,10 @@ export type IntroGroup =
   | "Plataformas"
   | "Accesos"
   | "Infraestructura auxiliar";
+
+export interface IntroField extends BaseIntroField {
+  readonly group: IntroGroup;
+}
 
 export const INTRO_GROUP_ORDER: readonly IntroGroup[] = [
   "Proyecto",
@@ -67,13 +76,6 @@ export const INTRO_FIELDS_MDIA: readonly IntroField[] = [
   { key: "kmAccesosNuevos", label: "Km accesos nuevos propuestos", placeholder: "Ej: 8.011", group: "Accesos" },
   { key: "auxiliarList", label: "Infraestructura auxiliar (separar con coma)", placeholder: "Ej: 1 patio de control, 1 helipuerto, 3 piscinas australianas, 20 trincheras, 12 pases vehiculares", group: "Infraestructura auxiliar" },
 ];
-
-export interface DgField {
-  readonly key: string;
-  readonly label: string;
-  readonly placeholder: string;
-  readonly multiline?: boolean;
-}
 
 export type DgGroupKey =
   | "nombre"
@@ -267,14 +269,7 @@ export const DG_FIELDS: Readonly<Record<DgGroupKey, readonly DgField[]>> = {
   ],
 };
 
-export interface SectionNode {
-  readonly id: string;
-  readonly title: string;
-  readonly level: number;
-  readonly children: readonly SectionNode[];
-  readonly isIntro?: boolean;
-  readonly structuredType?: DgGroupKey;
-}
+export type SectionNode = BaseSectionNode<DgGroupKey>;
 
 export const SECTIONS: readonly SectionNode[] = [
   {
@@ -353,23 +348,11 @@ export const SECTIONS: readonly SectionNode[] = [
   },
 ];
 
-function collectIds(nodes: readonly SectionNode[], out: string[] = []): string[] {
-  for (const n of nodes) {
-    out.push(n.id);
-    if (n.children.length) collectIds(n.children, out);
-  }
-  return out;
-}
+export const ALL_SECTION_IDS: readonly string[] = collectSectionIds<DgGroupKey>(SECTIONS);
 
-export const ALL_SECTION_IDS: readonly string[] = collectIds(SECTIONS);
-
-export function findSection(id: string, nodes: readonly SectionNode[] = SECTIONS): SectionNode | null {
-  for (const n of nodes) {
-    if (n.id === id) return n;
-    if (n.children.length) {
-      const found = findSection(id, n.children);
-      if (found) return found;
-    }
-  }
-  return null;
+export function findSection(
+  id: string,
+  nodes: readonly SectionNode[] = SECTIONS,
+): SectionNode | null {
+  return findSectionGeneric<DgGroupKey>(id, nodes);
 }
