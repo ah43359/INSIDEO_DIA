@@ -148,9 +148,16 @@ export function deriveCap2Prefill(input: DerivePrefillInput): DerivePrefillResul
   const { project, cliente, componentes, componentsGeom, areaEstudio } = input;
   const warnings: string[] = [];
 
-  // ── DIA vs MDIA detection ───────────────────────────────────────────
-  const introType: IntroType =
-    project.iga_previo != null || project.proyecto_brownfield === true ? "MDIA" : "DIA";
+  // ── DIA only (MDIA deferred to v2) ──────────────────────────────────
+  // Always return introType: "DIA". If the project carries an iga_previo
+  // or is flagged brownfield, surface a warning so the user knows MDIA
+  // support is pending and they need to edit accordingly.
+  const introType: IntroType = "DIA";
+  if (project.iga_previo != null || project.proyecto_brownfield === true) {
+    warnings.push(
+      "Este proyecto tiene una DIA previa registrada (`iga_previo` o `proyecto_brownfield = true`). El soporte para MDIA está pendiente; por ahora edita los campos como una DIA nueva.",
+    );
+  }
 
   const utmZone: UtmZone = utmZoneFromNumber(project.zona_utm);
 
@@ -230,18 +237,11 @@ export function deriveCap2Prefill(input: DerivePrefillInput): DerivePrefillResul
     );
   }
 
-  // ── MDIA-only warnings ──────────────────────────────────────────────
-  if (introType === "MDIA" && !sawAttrEstado) {
-    warnings.push(
-      'Marca cada componente con `attrs.estado` (aprobado / reubicado / nuevo) en el inventario para auto-llenar los campos delta de MDIA (plataformas aprobadas/reubicadas, km accesos aprobados/nuevos).',
-    );
-  }
-
   // ── Build introFields ───────────────────────────────────────────────
   const projectName = project.nombre_proyecto;
   const introFields: Record<string, string> = {
     nombreProyecto: projectName,
-    abrevProyecto: introType === "MDIA" ? `MDIA "${projectName}"` : `DIA "${projectName}"`,
+    abrevProyecto: `DIA "${projectName}"`,
     empresaTitular: cliente?.razon_social ?? "",
     abrevEmpresa: "",
     coordEste,
@@ -254,15 +254,13 @@ export function deriveCap2Prefill(input: DerivePrefillInput): DerivePrefillResul
     kmAccesos: kmAccesosTotal > 0 ? formatNumber(kmAccesosTotal, 3) : "",
     auxiliarList: auxiliarParts.join(", "),
   };
-
-  if (introType === "MDIA") {
-    introFields.platAprobadas = platAprobadas > 0 ? formatCount(platAprobadas) : "";
-    introFields.platReubicadas = platReubicadas > 0 ? formatCount(platReubicadas) : "";
-    introFields.kmAccesosAprobados = kmAccesosAprobados > 0 ? formatNumber(kmAccesosAprobados, 3) : "";
-    introFields.kmAccesosNuevos = kmAccesosNuevos > 0 ? formatNumber(kmAccesosNuevos, 3) : "";
-    introFields.rdAprobacion = "";
-    introFields.abrevDIA = `DIA "${projectName}"`;
-  }
+  // MDIA-only delta accumulators (platAprobadas/Reubicadas, kmAccesos*) are
+  // collected above for forward-compat but not exposed in DIA-only output.
+  void platAprobadas;
+  void platReubicadas;
+  void kmAccesosAprobados;
+  void kmAccesosNuevos;
+  void sawAttrEstado;
 
   // ── Build dgFields (project + client metadata mirror) ───────────────
   const dgFields: Record<string, string> = {
@@ -277,10 +275,7 @@ export function deriveCap2Prefill(input: DerivePrefillInput): DerivePrefillResul
     dg_repNombre: cliente?.representante ?? "",
     dg_repCargo: cliente?.cargo ?? "",
     dg_repDNI: cliente?.dni_representante ?? "",
-    dg_tipoEstudio:
-      introType === "MDIA"
-        ? "Modificación de la Declaración de Impacto Ambiental (MDIA – Categoría I)"
-        : "Declaración de Impacto Ambiental (DIA – Categoría I)",
+    dg_tipoEstudio: "Declaración de Impacto Ambiental (DIA – Categoría I)",
   };
 
   if (centroidLatLon && coordEste && coordNorte) {

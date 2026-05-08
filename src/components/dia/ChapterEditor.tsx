@@ -1,100 +1,85 @@
 "use client";
 
+// Generic chapter editor used by Cap. 1 (Resumen Ejecutivo) and any
+// future chapter that doesn't need a custom intro panel (Caps 4, 5, 7).
+//
+// Cap. 2 keeps its bespoke editor at src/components/cap2/Cap2Editor.tsx
+// for now because of its UTM zone selector + basin auto-detect UI.
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ALL_SECTION_IDS,
-  DG_FIELDS,
-  type DgGroupKey,
-  INTRO_FIELDS_DIA,
-  INTRO_GROUP_ORDER,
-  type IntroField,
-  type IntroGroup,
-  type SectionNode,
-  SECTIONS,
+  type DgField,
   findSection,
-} from "@/lib/dia/cap2/fields";
+  type SectionNode,
+} from "@/lib/dia/framework/manifest";
 import {
-  type Cap2State,
-  type UtmZone,
-  fromExportV7,
-  toExportV7,
-} from "@/lib/dia/cap2/state";
-import { findBasin } from "@/lib/dia/cap2/utm";
+  type ChapterFields,
+  type ChapterState,
+  fromChapterExportV7,
+  toChapterExportV7,
+} from "@/lib/dia/framework/state";
+import {
+  loadChapterState,
+  saveChapterState,
+} from "@/lib/dia/framework/storage";
+import type { ChapterId } from "@/lib/dia/framework/manifest";
 
-interface Cap2EditorProps {
+export interface ChapterEditorProps {
+  chapterId: ChapterId;
+  chapterTitle: string;
   projectId: string;
   projectName: string;
-  prefill: Cap2State;
+  prefill: ChapterState;
   warnings: readonly string[];
+  sections: readonly SectionNode[];
+  dgGroups: Readonly<Record<string, readonly DgField[]>>;
+  /** First section opened by default (e.g. "1.0" or "2.1"). */
+  initialActiveId: string;
+  /** Section ids whose subtree starts expanded. */
+  initiallyOpenIds: readonly string[];
 }
 
 type GenerateState = "idle" | "generating" | "error";
 
-function storageKey(projectId: string): string {
-  return `cap2:${projectId}`;
-}
-
-function loadState(projectId: string, prefill: Cap2State): Cap2State {
-  if (typeof window === "undefined") return prefill;
-  try {
-    const raw = window.localStorage.getItem(storageKey(projectId));
-    if (!raw) return prefill;
-    const parsed = JSON.parse(raw) as Partial<Cap2State>;
-    return {
-      introType: parsed.introType === "MDIA" ? "MDIA" : prefill.introType,
-      utmZone: (["17S", "18S", "19S"] as const).includes(parsed.utmZone as UtmZone)
-        ? (parsed.utmZone as UtmZone)
-        : prefill.utmZone,
-      introFields: { ...prefill.introFields, ...(parsed.introFields ?? {}) },
-      dgFields: { ...prefill.dgFields, ...(parsed.dgFields ?? {}) },
-      content: { ...prefill.content, ...(parsed.content ?? {}) },
-    };
-  } catch {
-    return prefill;
-  }
-}
-
-export default function Cap2Editor({ projectId, projectName, prefill, warnings }: Cap2EditorProps) {
-  const [state, setState] = useState<Cap2State>(() => prefill);
+export default function ChapterEditor({
+  chapterId,
+  chapterTitle,
+  projectId,
+  projectName,
+  prefill,
+  warnings,
+  sections,
+  dgGroups,
+  initialActiveId,
+  initiallyOpenIds,
+}: ChapterEditorProps) {
+  const [state, setState] = useState<ChapterState>(prefill);
   const [hydrated, setHydrated] = useState(false);
-  const [activeId, setActiveId] = useState<string>("2.1");
-  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(["2.0", "2.2", "2.8"]));
+  const [activeId, setActiveId] = useState<string>(initialActiveId);
+  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(initiallyOpenIds));
   const [generate, setGenerate] = useState<GenerateState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Hydrate from localStorage on mount (overlays the SSR prefill)
   useEffect(() => {
-    setState(loadState(projectId, prefill));
+    setState(loadChapterState(chapterId, projectId, prefill));
     setHydrated(true);
-  }, [projectId, prefill]);
+  }, [chapterId, projectId, prefill]);
 
-  // Persist on every change (after hydration to avoid clobbering with prefill)
   useEffect(() => {
-    if (!hydrated || typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(storageKey(projectId), JSON.stringify(state));
-    } catch {
-      // Storage quota/permissions errors are non-fatal for editor functionality
-    }
-  }, [state, projectId, hydrated]);
+    if (!hydrated) return;
+    saveChapterState(chapterId, projectId, state);
+  }, [state, chapterId, projectId, hydrated]);
 
-  const activeSection = useMemo(() => findSection(activeId), [activeId]);
+  const activeSection = useMemo(() => findSection(activeId, sections), [activeId, sections]);
 
-  function setIntroField(key: string, value: string): void {
-    setState((s) => ({ ...s, introFields: { ...s.introFields, [key]: value } }));
-  }
   function setDgField(key: string, value: string): void {
     setState((s) => ({ ...s, dgFields: { ...s.dgFields, [key]: value } }));
   }
   function setContent(id: string, value: string): void {
     setState((s) => ({ ...s, content: { ...s.content, [id]: value } }));
   }
-  function setUtmZone(z: UtmZone): void {
-    setState((s) => ({ ...s, utmZone: z }));
-  }
-
   function toggleOpen(id: string): void {
     setOpenIds((prev) => {
       const next = new Set(prev);
@@ -105,19 +90,15 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
   }
 
   function handleExportJson(): void {
-    const payload = toExportV7(state);
+    const payload = toChapterExportV7(state);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `cap2_descripcion_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `cap${chapterId}_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     flashNotice("JSON exportado");
-  }
-
-  function handleImportClick(): void {
-    fileInputRef.current?.click();
   }
 
   function handleImportFile(ev: React.ChangeEvent<HTMLInputElement>): void {
@@ -127,7 +108,7 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
     reader.onload = (e) => {
       try {
         const parsed = JSON.parse(String(e.target?.result ?? ""));
-        const imported = fromExportV7(parsed);
+        const imported = fromChapterExportV7(parsed);
         setState(imported);
         flashNotice("JSON importado");
       } catch (err) {
@@ -142,10 +123,10 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
     setGenerate("generating");
     setErrorMsg(null);
     try {
-      const response = await fetch(`/api/projects/${projectId}/dia/2`, {
+      const response = await fetch(`/api/projects/${projectId}/dia/${chapterId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toExportV7(state)),
+        body: JSON.stringify(toChapterExportV7(state)),
       });
       if (!response.ok) {
         const text = await response.text();
@@ -155,7 +136,7 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Cap2_Descripcion_${projectName.replace(/\s+/g, "_")}.docx`;
+      a.download = `Cap${chapterId}_${chapterTitle.replace(/\s+/g, "_")}_${projectName.replace(/\s+/g, "_")}.docx`;
       a.click();
       URL.revokeObjectURL(url);
       setGenerate("idle");
@@ -171,9 +152,10 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
     window.setTimeout(() => setNotification(null), 2200);
   }
 
+  const fields = activeSection?.structuredType ? dgGroups[activeSection.structuredType] : undefined;
+
   return (
     <div className="mx-auto grid max-w-[1400px] grid-cols-[260px_1fr] gap-4 px-6 py-4">
-      {/* Left: section tree + actions */}
       <aside className="flex flex-col gap-3">
         <div className="flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-3">
           <button
@@ -198,7 +180,7 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
               Exp JSON
             </button>
             <button
-              onClick={handleImportClick}
+              onClick={() => fileInputRef.current?.click()}
               className="flex-1 rounded-md border border-stone-200 px-2 py-1.5 text-xs text-stone-700 hover:bg-stone-50"
             >
               Imp JSON
@@ -215,7 +197,7 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
 
         <nav className="rounded-lg border border-stone-200 bg-white p-2">
           <SectionTree
-            nodes={SECTIONS}
+            nodes={sections}
             activeId={activeId}
             openIds={openIds}
             onSelect={setActiveId}
@@ -225,7 +207,6 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
         </nav>
       </aside>
 
-      {/* Right: editor pane */}
       <main className="flex flex-col gap-4">
         {warnings.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -245,16 +226,10 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
           <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">Error: {errorMsg}</div>
         )}
 
-        {activeSection?.isIntro ? (
-          <IntroPanel
-            state={state}
-            onIntroFieldChange={setIntroField}
-            onUtmZoneChange={setUtmZone}
-          />
-        ) : activeSection?.structuredType ? (
+        {activeSection && fields && fields.length > 0 ? (
           <StructuredPanel
             section={activeSection}
-            groupKey={activeSection.structuredType}
+            fields={fields}
             dgFields={state.dgFields}
             content={state.content}
             onDgFieldChange={setDgField}
@@ -284,7 +259,7 @@ interface SectionTreeProps {
   openIds: Set<string>;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
-  content: Record<string, string>;
+  content: ChapterFields;
 }
 
 function SectionTree({ nodes, activeId, openIds, onSelect, onToggle, content }: SectionTreeProps) {
@@ -305,16 +280,18 @@ function SectionTree({ nodes, activeId, openIds, onSelect, onToggle, content }: 
   );
 }
 
-interface SectionTreeNodeProps {
+interface SectionTreeNodeProps extends Omit<SectionTreeProps, "nodes"> {
   node: SectionNode;
-  activeId: string;
-  openIds: Set<string>;
-  onSelect: (id: string) => void;
-  onToggle: (id: string) => void;
-  content: Record<string, string>;
 }
 
-function SectionTreeNode({ node, activeId, openIds, onSelect, onToggle, content }: SectionTreeNodeProps) {
+function SectionTreeNode({
+  node,
+  activeId,
+  openIds,
+  onSelect,
+  onToggle,
+  content,
+}: SectionTreeNodeProps) {
   const isActive = activeId === node.id;
   const isOpen = openIds.has(node.id);
   const hasChildren = node.children.length > 0;
@@ -364,134 +341,25 @@ function SectionTreeNode({ node, activeId, openIds, onSelect, onToggle, content 
   );
 }
 
-// ─── Intro panel (2.1) ────────────────────────────────────────────────
-
-interface IntroPanelProps {
-  state: Cap2State;
-  onIntroFieldChange: (key: string, value: string) => void;
-  onUtmZoneChange: (z: UtmZone) => void;
-}
-
-function IntroPanel({ state, onIntroFieldChange, onUtmZoneChange }: IntroPanelProps) {
-  const fields = INTRO_FIELDS_DIA;
-  const groups = useMemo(() => {
-    const g: Record<IntroGroup, IntroField[]> = {
-      Proyecto: [],
-      Empresa: [],
-      Ubicación: [],
-      Plataformas: [],
-      Accesos: [],
-      "Infraestructura auxiliar": [],
-    };
-    for (const f of fields) g[f.group].push(f);
-    return g;
-  }, [fields]);
-
-  const easting = parseFloat(state.introFields.coordEste ?? "");
-  const northing = parseFloat(state.introFields.coordNorte ?? "");
-  const basin =
-    Number.isFinite(easting) && Number.isFinite(northing) && easting > 100000 && northing > 7000000
-      ? findBasin(easting, northing, state.utmZone)
-      : null;
-
-  return (
-    <div className="space-y-4">
-
-      <section className="rounded-lg border border-stone-200 bg-white p-4">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-stone-500">
-          2.1 Introducción · campos
-        </h2>
-        {INTRO_GROUP_ORDER.map((g) => {
-          const fs = groups[g];
-          if (!fs || fs.length === 0) return null;
-          return (
-            <div key={g} className="mb-5">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-stone-500">{g}</div>
-
-              {g === "Ubicación" && (
-                <div className="mb-2">
-                  <label className="mb-1 block text-xs font-medium text-stone-600">Zona UTM</label>
-                  <div className="flex gap-2">
-                    {(["17S", "18S", "19S"] as const).map((z) => (
-                      <button
-                        key={z}
-                        onClick={() => onUtmZoneChange(z)}
-                        className={`flex-1 rounded border-2 py-1.5 text-sm font-semibold transition ${
-                          state.utmZone === z
-                            ? "border-emerald-600 bg-emerald-50 text-emerald-700"
-                            : "border-stone-200 bg-white text-stone-500 hover:border-stone-300"
-                        }`}
-                      >
-                        {z}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-2">
-                {fs.map((f) => (
-                  <div key={f.key}>
-                    <label className="mb-0.5 block text-xs font-medium text-stone-600">{f.label}</label>
-                    {f.key === "auxiliarList" ? (
-                      <textarea
-                        className="min-h-16 w-full resize-y rounded border border-stone-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-stone-400"
-                        placeholder={f.placeholder}
-                        value={state.introFields[f.key] ?? ""}
-                        onChange={(e) => onIntroFieldChange(f.key, e.target.value)}
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        className="w-full rounded border border-stone-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-stone-400"
-                        placeholder={f.placeholder}
-                        value={state.introFields[f.key] ?? ""}
-                        onChange={(e) => onIntroFieldChange(f.key, e.target.value)}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {g === "Ubicación" && basin && (
-                <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs">
-                  <p className="text-emerald-800">
-                    <span className="font-semibold">Cuenca detectada:</span>{" "}
-                    {basin.basin ?? "No identificada en la base de datos"}
-                  </p>
-                  <p className="mt-0.5 text-emerald-600">
-                    Lat: {basin.lat.toFixed(4)}° · Lon: {basin.lon.toFixed(4)}° · Zona {state.utmZone}
-                  </p>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </section>
-    </div>
-  );
-}
-
 // ─── Structured fields panel ──────────────────────────────────────────
 
 interface StructuredPanelProps {
   section: SectionNode;
-  groupKey: DgGroupKey;
-  dgFields: Record<string, string>;
-  content: Record<string, string>;
+  fields: readonly DgField[];
+  dgFields: ChapterFields;
+  content: ChapterFields;
   onDgFieldChange: (key: string, value: string) => void;
   onContentChange: (id: string, value: string) => void;
 }
 
 function StructuredPanel({
   section,
-  groupKey,
+  fields,
   dgFields,
   content,
   onDgFieldChange,
   onContentChange,
 }: StructuredPanelProps) {
-  const fields = DG_FIELDS[groupKey] ?? [];
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-stone-200 bg-white p-4">
@@ -532,8 +400,6 @@ function StructuredPanel({
   );
 }
 
-// ─── Free text panel ──────────────────────────────────────────────────
-
 interface FreeTextPanelProps {
   section: SectionNode;
   value: string;
@@ -542,7 +408,6 @@ interface FreeTextPanelProps {
 }
 
 function FreeTextPanel({ section, value, onChange, compact }: FreeTextPanelProps) {
-  void ALL_SECTION_IDS; // Reference to keep import noted in tree-shake-aware bundlers
   return (
     <section className="rounded-lg border border-stone-200 bg-white p-4">
       <div className="mb-2 flex items-center justify-between">
@@ -550,10 +415,7 @@ function FreeTextPanel({ section, value, onChange, compact }: FreeTextPanelProps
           {compact ? "Texto adicional" : section.title}
         </h2>
         {value.trim() && (
-          <button
-            onClick={() => onChange("")}
-            className="text-xs text-red-400 hover:text-red-600"
-          >
+          <button onClick={() => onChange("")} className="text-xs text-red-400 hover:text-red-600">
             Limpiar
           </button>
         )}

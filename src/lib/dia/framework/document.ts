@@ -1,7 +1,8 @@
-// Top-level Capítulo 2 .docx assembler.
+// Shared docx document scaffold for DIA chapters.
 //
-// Mirrors the structure of `src/lib/pdt/document.ts` (Document with
-// paragraphStyles, single section with header/footer, A4 page).
+// Each chapter contributes a `Paragraph[]` body via its own builder; this
+// module wraps that body in a `Document` with consistent fonts, headings,
+// numbering, headers, and footers so all chapters look the same.
 
 import {
   AlignmentType,
@@ -15,42 +16,27 @@ import {
   TextRun,
 } from "docx";
 import {
-  buildAntecedentes,
-  buildCronograma,
-  buildDelimitacion,
-  buildDescripcion,
-  buildInfluencia,
-  buildIntro,
-  buildLocalizacion,
-  buildObjetivos,
-} from "./sections";
-import { BULLET_NUMBERING, COLOR_H1, COLOR_H2, COLOR_MUTED, FONT, SIZE_HEADER_FOOTER } from "./styles";
-import type { Cap2State } from "./state";
+  BULLET_NUMBERING,
+  COLOR_H1,
+  COLOR_H2,
+  COLOR_MUTED,
+  FONT,
+  SIZE_HEADER_FOOTER,
+} from "./styles";
 
-export async function buildCap2Document(state: Cap2State, projectName: string): Promise<Buffer> {
-  const children: Paragraph[] = [
-    new Paragraph({
-      alignment: AlignmentType.LEFT,
-      spacing: { after: 240 },
-      children: [
-        new TextRun({
-          text: "Capítulo 2: Descripción del Proyecto",
-          font: FONT,
-          size: 32,
-          bold: true,
-          color: COLOR_H1,
-        }),
-      ],
-    }),
-    ...buildIntro(state),
-    ...buildAntecedentes(state),
-    ...buildObjetivos(state),
-    ...buildLocalizacion(state),
-    ...buildDelimitacion(state),
-    ...buildInfluencia(state),
-    ...buildCronograma(state),
-    ...buildDescripcion(state),
-  ];
+export interface ChapterDocumentInput {
+  /** Body paragraphs for the chapter — already wrapped in headings/bullets. */
+  body: readonly Paragraph[];
+  /** Used in the right-aligned page header. */
+  projectName: string;
+  /** "DIA" or "Cap. 1" etc., shown left of the project name in the header. */
+  headerLabel: string;
+  /** Footer prefix, e.g. "Capítulo 1 – Página". */
+  footerLabel: string;
+}
+
+export async function buildChapterDocumentBuffer(input: ChapterDocumentInput): Promise<Buffer> {
+  const { body, projectName, headerLabel, footerLabel } = input;
 
   const doc = new Document({
     styles: {
@@ -106,7 +92,7 @@ export async function buildCap2Document(state: Cap2State, projectName: string): 
                 },
                 children: [
                   new TextRun({
-                    text: "DIA",
+                    text: headerLabel,
                     font: FONT,
                     size: SIZE_HEADER_FOOTER,
                     color: COLOR_MUTED,
@@ -131,7 +117,7 @@ export async function buildCap2Document(state: Cap2State, projectName: string): 
                 alignment: AlignmentType.CENTER,
                 children: [
                   new TextRun({
-                    text: "Capítulo 2 – Página ",
+                    text: `${footerLabel} `,
                     font: FONT,
                     size: SIZE_HEADER_FOOTER,
                     color: COLOR_MUTED,
@@ -147,7 +133,7 @@ export async function buildCap2Document(state: Cap2State, projectName: string): 
             ],
           }),
         },
-        children,
+        children: body as Paragraph[],
       },
     ],
   });

@@ -10,8 +10,7 @@ import { bodyP, boldRun, bulletP, normalRun, sectionHeading, v } from "./styles"
 type Build = (state: Cap2State) => Paragraph[];
 
 export const buildIntro: Build = (state) => {
-  const { introFields: iF, utmZone, introType } = state;
-  const isDIA = introType === "DIA";
+  const { introFields: iF, utmZone } = state;
   const out: Paragraph[] = [];
 
   out.push(sectionHeading(1, "2.1 Introducción"));
@@ -27,26 +26,12 @@ export const buildIntro: Build = (state) => {
       normalRun(' (en adelante, "'),
       boldRun(v(iF.abrevEmpresa, "ABREV.")),
       normalRun(
-        isDIA
-          ? '"), para sustentar la aprobación de la Declaración de Impacto Ambiental (DIA – Categoría I) (en adelante, la "'
-          : '"), para sustentar la aprobación de la Modificación de la Declaración de Impacto Ambiental (MDIA – Categoría I) (en adelante, la "',
+        '"), para sustentar la aprobación de la Declaración de Impacto Ambiental (DIA – Categoría I) (en adelante, la "',
       ),
-      boldRun(v(iF.abrevProyecto, isDIA ? "ABREV. DIA" : "ABREV. MDIA")),
+      boldRun(v(iF.abrevProyecto, "ABREV. DIA")),
       normalRun('").'),
     ]),
   );
-
-  if (!isDIA) {
-    out.push(
-      bodyP([
-        normalRun("Es importante mencionar que el Proyecto cuenta con una DIA aprobada mediante la "),
-        boldRun(v(iF.rdAprobacion, "RESOLUCIÓN DIRECTORAL")),
-        normalRun(' (en adelante, "'),
-        boldRun(v(iF.abrevDIA, "ABREV. DIA")),
-        normalRun('").'),
-      ]),
-    );
-  }
 
   out.push(
     bodyP([
@@ -81,7 +66,7 @@ export const buildIntro: Build = (state) => {
 };
 
 export const buildAntecedentes: Build = (state) => {
-  const { dgFields: dF, content, introType } = state;
+  const { dgFields: dF, content } = state;
   const out: Paragraph[] = [];
 
   out.push(sectionHeading(1, "2.2 Antecedentes"));
@@ -129,27 +114,6 @@ export const buildAntecedentes: Build = (state) => {
       normalRun("."),
     ]),
   );
-
-  if (introType === "MDIA") {
-    out.push(sectionHeading(2, "2.2.2 Antecedentes del área efectiva y área de influencia directa"));
-    out.push(
-      bodyP([
-        normalRun("El área efectiva anterior comprende "),
-        boldRun(v(dF.dg_areaEfectivaHa, "ÁREA")),
-        normalRun(" ha y el área de influencia directa anterior, "),
-        boldRun(v(dF.dg_areaInfluenciaHa, "ÁREA")),
-        normalRun(" ha, según lo aprobado mediante "),
-        boldRun(v(dF.dg_rdAnterior, "RD")),
-        normalRun(" del "),
-        boldRun(v(dF.dg_fechaRdAnterior, "FECHA")),
-        normalRun(". La nueva área efectiva propuesta es "),
-        boldRun(v(dF.dg_nuevaAreaEfectivaHa, "ÁREA")),
-        normalRun(" ha y la nueva área de influencia directa, "),
-        boldRun(v(dF.dg_nuevaAreaInfluenciaHa, "ÁREA")),
-        normalRun(" ha."),
-      ]),
-    );
-  }
 
   out.push(sectionHeading(2, "2.2.3 Derechos o concesiones mineras"));
   out.push(
@@ -219,8 +183,7 @@ export const buildAntecedentes: Build = (state) => {
 };
 
 export const buildObjetivos: Build = (state) => {
-  const { introType, dgFields: dF, introFields: iF } = state;
-  const isDIA = introType === "DIA";
+  const { dgFields: dF, introFields: iF } = state;
   const out: Paragraph[] = [];
 
   out.push(sectionHeading(1, "2.3 Objetivos y justificación"));
@@ -231,7 +194,7 @@ export const buildObjetivos: Build = (state) => {
   );
   out.push(
     bodyP([
-      normalRun(isDIA ? "De manera específica, el objetivo de la presente DIA" : "De manera específica, el objetivo de la presente Modificación de la DIA"),
+      normalRun("De manera específica, el objetivo de la presente DIA"),
       normalRun(
         ` está relacionado a la habilitación y perforación de hasta ${v(iF.numPlataformas, "N°")} plataformas de perforación, ${v(iF.numSondajes, "N°")} sondajes, ${v(iF.kmAccesos, "N°")} km de accesos`,
       ),

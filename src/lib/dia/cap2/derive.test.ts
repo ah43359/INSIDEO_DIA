@@ -132,7 +132,7 @@ describe("deriveCap2Prefill", () => {
     expect(result.state.introFields.auxiliarList).toContain("Plataforma de helipuerto");
   });
 
-  it("detects MDIA via iga_previo and warns when estado attrs are missing", () => {
+  it("always returns DIA and warns when iga_previo signals an MDIA case", () => {
     const result = deriveCap2Prefill({
       project: makeProject({ iga_previo: { rd: "R.D. N° 0036-2025" } }),
       cliente,
@@ -141,11 +141,12 @@ describe("deriveCap2Prefill", () => {
       areaEstudio: null,
     });
 
-    expect(result.state.introType).toBe("MDIA");
-    expect(result.warnings.some((w) => /attrs.estado/i.test(w))).toBe(true);
+    // MDIA support is deferred to v2 — derive always emits DIA but flags the project.
+    expect(result.state.introType).toBe("DIA");
+    expect(result.warnings.some((w) => /MDIA está pendiente/i.test(w))).toBe(true);
   });
 
-  it("splits aprobado vs reubicado plataformas when attrs.estado is present", () => {
+  it("returns DIA even for brownfield projects (MDIA delta fields are not exposed)", () => {
     const result = deriveCap2Prefill({
       project: makeProject({ proyecto_brownfield: true }),
       cliente,
@@ -158,11 +159,10 @@ describe("deriveCap2Prefill", () => {
       areaEstudio: null,
     });
 
-    expect(result.state.introType).toBe("MDIA");
-    expect(result.state.introFields.platAprobadas).toBe("2");
-    expect(result.state.introFields.platReubicadas).toBe("1");
-    // No "estado missing" warning since attrs.estado is present on all rows
-    expect(result.warnings.some((w) => /attrs.estado/i.test(w))).toBe(false);
+    expect(result.state.introType).toBe("DIA");
+    // Delta fields are not surfaced in DIA-only mode.
+    expect(result.state.introFields.platAprobadas).toBeUndefined();
+    expect(result.state.introFields.platReubicadas).toBeUndefined();
   });
 
   it("falls back to UTM 19S when zona_utm is missing", () => {
