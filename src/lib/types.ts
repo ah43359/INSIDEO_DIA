@@ -193,6 +193,129 @@ export interface AreaEstudioRow {
   geom_geojson: string;
 }
 
+// ─── Station Measurements ───────────────────────────────────────────────────
+
+export type MeasurementCampaign = "linea_base" | "construccion" | "operacion" | "cierre";
+
+export interface StationMeasurement {
+  id: string;
+  station_id: string;
+  station_code: string;
+  kind: string;
+  campaign: MeasurementCampaign;
+  measurement_date: string;
+  parameters: Record<string, { value: number; unit: string }>;
+  eca_compliance: Record<string, { compliant: boolean; threshold: number; value: number }> | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface StationWithMeasurement {
+  station_id: string;
+  station_code: string;
+  kind: string;
+  has_measurements: boolean;
+  last_measurement_date: string | null;
+  compliance_rate: number | null;
+}
+
+export const CAMPAIGN_LABEL: Record<MeasurementCampaign, string> = {
+  linea_base: "Línea Base",
+  construccion: "Construcción",
+  operacion: "Operación",
+  cierre: "Cierre",
+};
+
+export const KIND_LABEL: Record<string, string> = {
+  aire: "Calidad de Aire",
+  ruido: "Ruido",
+  vibraciones: "Vibraciones",
+  agua_superficial: "Agua Superficial",
+  agua_subterranea: "Agua Subterránea",
+  suelos: "Suelos",
+  sedimentos: "Sedimentos",
+  flora_fauna: "Flora y Fauna",
+};
+
+// Parameters by station kind (from ECA Peru standards)
+export const PARAMETERS_BY_KIND: Record<string, { param: string; unit: string }[]> = {
+  aire: [
+    { param: "PM10", unit: "μg/m³" },
+    { param: "PM2.5", unit: "μg/m³" },
+    { param: "SO2", unit: "μg/m³" },
+    { param: "NO2", unit: "μg/m³" },
+    { param: "CO", unit: "μg/m³" },
+    { param: "O3", unit: "μg/m³" },
+    { param: "Pb", unit: "μg/m³" },
+  ],
+  ruido: [
+    { param: "LAeq diurno", unit: "dB(A)" },
+    { param: "LAeq nocturno", unit: "dB(A)" },
+    { param: "L10 diurno", unit: "dB(A)" },
+    { param: "L10 nocturno", unit: "dB(A)" },
+  ],
+  vibraciones: [
+    { param: "PPV", unit: "mm/s" },
+    { param: "frecuencia", unit: "Hz" },
+  ],
+  agua_superficial: [
+    { param: "pH", unit: "-" },
+    { param: "OD", unit: "mg/L" },
+    { param: "conductividad", unit: "μS/cm" },
+    { param: "turbidez", unit: "NTU" },
+    { param: "DBO5", unit: "mg/L" },
+    { param: "DQO", unit: "mg/L" },
+    { param: "Pb", unit: "mg/L" },
+    { param: "As", unit: "mg/L" },
+    { param: "Cd", unit: "mg/L" },
+    { param: "Cu", unit: "mg/L" },
+    { param: "Fe", unit: "mg/L" },
+    { param: "Hg", unit: "mg/L" },
+    { param: "Zn", unit: "mg/L" },
+  ],
+  agua_subterranea: [
+    { param: "pH", unit: "-" },
+    { param: "OD", unit: "mg/L" },
+    { param: "conductividad", unit: "μS/cm" },
+    { param: "Pb", unit: "mg/L" },
+    { param: "As", unit: "mg/L" },
+    { param: "Cd", unit: "mg/L" },
+  ],
+  suelos: [
+    { param: "pH", unit: "-" },
+    { param: "materia_organica", unit: "%" },
+    { param: "textura", unit: "-" },
+    { param: "CIC", unit: "cmol/kg" },
+    { param: "P_disponible", unit: "mg/kg" },
+    { param: "K_intercambiable", unit: "cmol/kg" },
+    { param: "Pb", unit: "mg/kg" },
+    { param: "As", unit: "mg/kg" },
+    { param: "Cd", unit: "mg/kg" },
+    { param: "Cu", unit: "mg/kg" },
+    { param: "Zn", unit: "mg/kg" },
+  ],
+  sedimentos: [
+    { param: "granulometria", unit: "%" },
+    { param: "materia_organica", unit: "%" },
+    { param: "Pb", unit: "mg/kg" },
+    { param: "As", unit: "mg/kg" },
+    { param: "Cd", unit: "mg/kg" },
+    { param: "Cu", unit: "mg/kg" },
+    { param: "Zn", unit: "mg/kg" },
+  ],
+};
+
+export const STATION_COLORS: Record<string, string> = {
+  aire: "#10b981",
+  ruido: "#a855f7",
+  vibraciones: "#ef4444",
+  agua_superficial: "#0ea5e9",
+  agua_subterranea: "#0284c7",
+  suelos: "#a16207",
+  sedimentos: "#854d0e",
+  default: "#1f2937",
+};
+
 /** Friendly Spanish labels for component category keys. */
 export const CATEGORY_LABELS: Record<string, string> = {
   A_exploracion_directa: "A. Exploración directa",
