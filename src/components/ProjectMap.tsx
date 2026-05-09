@@ -78,6 +78,12 @@ const LAYER_GROUPS = {
     "components-label-line",
   ],
   vegetation:  ["vegetation-fill", "vegetation-label"],
+  // Political boundaries
+  departments:  ["departamentos-fill", "departamentos-line"],
+  provinces:    ["provincias-fill", "provincias-line"],
+  districts:    ["distritos-fill", "distritos-line"],
+  // Roads
+  roads:        ["roads-line"],
   // sampling-station kinds are filtered via filter expression rather
   // than separate layers (see toggleStationKindFilter).
 } as const;
@@ -213,7 +219,7 @@ function asAreaFeatureCollection(
 export default function ProjectMap({
   geojson,
   microcuencas,
-  rivers,
+rivers,
   receptores,
   samplingStations,
   areaEstudio,
@@ -223,6 +229,7 @@ export default function ProjectMap({
 }: ProjectMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
+  const [basemap, setBasemap] = useState<BasemapKey>("default");
 
   // Layer-group visibility (true = visible). Default everything on.
   const [groupVisible, setGroupVisible] = useState<Record<LayerGroup, boolean>>({
@@ -234,13 +241,74 @@ export default function ProjectMap({
     receptores: true,
     components: true,
     vegetation: true,
+    departments: true,
+    provinces: true,
+    districts: true,
+    roads: true,
   });
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
   // Vegetation classes: each class togglable independently.
   const [vegClassVisible, setVegClassVisible] = useState<Record<string, boolean>>({});
-  // Basemap selection — drives the underlying tile source.
-  const [basemap, setBasemap] = useState<BasemapKey>("default");
+
+  // Client-side loaded boundaries from GitHub
+  const [boundaryData, setBoundaryData] = useState<{
+    departamentos: GeoJSON.FeatureCollection | null;
+    provincias: GeoJSON.FeatureCollection | null;
+    distritos: GeoJSON.FeatureCollection | null;
+  }>({
+    departamentos: null,
+    provincias: null,
+    distritos: null,
+  });
+
+  const BOUNDARY_URLS = {
+    departamentos: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
+    provincias: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_provincial_simple.geojson",
+    distritos: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_distrital_simple.geojson",
+  };
+
+  useEffect(() => {
+    const loadBoundaries = async () => {
+      try {
+        const [deptRes, provRes, distRes] = await Promise.all([
+          fetch(BOUNDARY_URLS.departamentos),
+          fetch(BOUNDARY_URLS.provincias),
+          fetch(BOUNDARY_URLS.distritos),
+        ]);
+        
+        // Log fetch status for debugging
+        console.log('Boundary fetch status:', {
+          dept: deptRes.status,
+          prov: provRes.status,
+          dist: distRes.status,
+        });
+        
+        const [dept, prov, dist] = await Promise.all([
+          deptRes.ok ? deptRes.json() : null,
+          provRes.ok ? provRes.json() : null,
+          distRes.ok ? distRes.json() : null,
+        ]);
+        
+        // Log loaded data shape
+        console.log('Boundary data loaded:', {
+          dept: dept?.features?.length,
+          prov: prov?.features?.length,
+          dist: dist?.features?.length,
+        });
+        
+        setBoundaryData({
+          departamentos: dept,
+          provincias: prov,
+          distritos: dist,
+        });
+      } catch (e) {
+        console.error("Failed to load boundaries:", e);
+      }
+    };
+
+    loadBoundaries();
+  }, []);
 
   // The colour of the área de estudio outline communicates status:
   //   draft → amber   approved → emerald   superseded → muted
@@ -378,7 +446,118 @@ export default function ProjectMap({
           "text-halo-color": "#ffffff",
           "text-halo-width": 1.2,
         },
+});
+  
+// Departamentos — political boundaries level 1 (loaded from Supabase)
+      console.log('Creating departamentos source');
+      map.addSource("departamentos", {
+        type: "geojson",
+        data: boundaryData.departamentos ?? EMPTY_FC,
       });
+      map.addLayer({
+        id: "departamentos-fill",
+        type: "fill",
+        source: "departamentos",
+        paint: {
+          "fill-color": "#6366f1",
+          "fill-opacity": 0.15,
+        },
+      });
+      map.addLayer({
+        id: "departamentos-line",
+        type: "line",
+        source: "departamentos",
+        paint: {
+          "line-color": "#4338ca",
+          "line-width": 2.5,
+        },
+      });
+
+      // Provincias — political boundaries level 2 (loaded client-side)
+      map.addSource("provincias", {
+        type: "geojson",
+        data: boundaryData.provincias ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "provincias-fill",
+        type: "fill",
+        source: "provincias",
+        paint: {
+          "fill-color": "#8b5cf6",
+          "fill-opacity": 0.15,
+        },
+      });
+      map.addLayer({
+        id: "provincias-line",
+        type: "line",
+        source: "provincias",
+        paint: {
+          "line-color": "#7c3aed",
+          "line-width": 2,
+        },
+      });
+
+      // Distritos — political boundaries level 3 (loaded client-side)
+      map.addSource("distritos", {
+        type: "geojson",
+        data: boundaryData.distritos ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "distritos-fill",
+        type: "fill",
+        source: "distritos",
+        paint: {
+          "fill-color": "#a78bfa",
+          "fill-opacity": 0.15,
+        },
+      });
+      map.addLayer({
+        id: "distritos-line",
+        type: "line",
+        source: "distritos",
+        paint: {
+          "line-color": "#8b5cf6",
+          "line-width": 1.5,
+        },
+      });
+
+      // Roads — from OpenStreetMap (not yet loaded - placeholder)
+      // Will be added when roads data is available
+      /*
+      map.addSource("roads", {
+        type: "geojson",
+        data: EMPTY_FC,
+      });
+      map.addLayer({
+        id: "roads-line",
+        type: "line",
+        source: "roads",
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": [
+            "match",
+            ["get", "tipo"],
+            "primary", "#dc2626",
+            "secondary", "#ea580c",
+            "tertiary", "#f59e0b",
+            "trunk", "#16a34a",
+            "#9ca3af",  // default gray
+          ],
+          "line-width": [
+            "match",
+            ["get", "tipo"],
+            "primary", 4,
+            "trunk", 3,
+            "secondary", 2.5,
+            "tertiary", 2,
+            1,
+          ],
+        },
+      });
+      */
 
       map.addLayer({
         id: "area-estudio-fill",
@@ -903,13 +1082,59 @@ export default function ProjectMap({
     const vegSrc = map.getSource("vegetation") as GeoJSONSource | undefined;
     if (vegSrc) vegSrc.setData(vegetationZones ?? EMPTY_FC);
 
+    const deptSrc = map.getSource("departamentos") as GeoJSONSource | undefined;
+    const provSrc = map.getSource("provincias") as GeoJSONSource | undefined;
+    const distSrc = map.getSource("distritos") as GeoJSONSource | undefined;
+    
+    console.log('Updating boundary sources:', {
+      deptSrc: !!deptSrc,
+      provSrc: !!provSrc,
+      distSrc: !!distSrc,
+      deptData: boundaryData.departamentos?.features?.length,
+      provData: boundaryData.provincias?.features?.length,
+      distData: boundaryData.distritos?.features?.length,
+    });
+    
+    if (deptSrc) {
+      deptSrc.setData(boundaryData.departamentos ?? EMPTY_FC);
+    }
+    if (provSrc) {
+      provSrc.setData(boundaryData.provincias ?? EMPTY_FC);
+    }
+    if (distSrc) {
+      distSrc.setData(boundaryData.distritos ?? EMPTY_FC);
+    }
+
+    // Roads source placeholder (not yet loaded)
+    // const roadsSrc = map.getSource("roads") as GeoJSONSource | undefined;
+
     if (map.getLayer("area-estudio-fill")) {
       map.setPaintProperty("area-estudio-fill", "fill-color", areaColor);
     }
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, boundaryData]);
+
+  // Separate effect specifically for boundary data updates
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    
+    const deptSrc = map.getSource("departamentos") as GeoJSONSource | undefined;
+    const provSrc = map.getSource("provincias") as GeoJSONSource | undefined;
+    const distSrc = map.getSource("distritos") as GeoJSONSource | undefined;
+    
+    if (deptSrc) {
+      deptSrc.setData(boundaryData.departamentos ?? EMPTY_FC);
+    }
+    if (provSrc) {
+      provSrc.setData(boundaryData.provincias ?? EMPTY_FC);
+    }
+    if (distSrc) {
+      distSrc.setData(boundaryData.distritos ?? EMPTY_FC);
+    }
+  }, [boundaryData]);
 
   // Apply group visibility toggles to the underlying maplibre layers.
   useEffect(() => {
@@ -989,6 +1214,10 @@ export default function ProjectMap({
   const hasAreaEfectiva = areaEfectiva !== null && areaEfectiva !== undefined;
   const hasComponents = geojson.features.length > 0;
   const hasVegetation = (vegetationZones?.features.length ?? 0) > 0;
+  const hasDepartamentos = (boundaryData.departamentos?.features.length ?? 0) > 0;
+  const hasProvincias = (boundaryData.provincias?.features.length ?? 0) > 0;
+  const hasDistritos = (boundaryData.distritos?.features.length ?? 0) > 0;
+  const hasRoads = false; // Roads not loaded yet
 
   // Distinct station kinds present, in stable order, for the legend.
   const stationKinds = useMemo<string[]>(() => {
@@ -1104,6 +1333,33 @@ export default function ProjectMap({
                 color: "#ec4899",
                 visible: groupVisible.receptores,
                 onToggle: () => toggleGroup("receptores"),
+              }
+            : null,
+          hasDepartamentos
+            ? {
+                label: "Departamentos",
+                swatch: "area" as const,
+                color: "#4338ca",
+                visible: groupVisible.departments,
+                onToggle: () => toggleGroup("departments"),
+              }
+            : null,
+          hasProvincias
+            ? {
+                label: "Provincias",
+                swatch: "area" as const,
+                color: "#7c3aed",
+                visible: groupVisible.provinces,
+                onToggle: () => toggleGroup("provinces"),
+              }
+            : null,
+          hasDistritos
+            ? {
+                label: "Distritos",
+                swatch: "area" as const,
+                color: "#8b5cf6",
+                visible: groupVisible.districts,
+                onToggle: () => toggleGroup("districts"),
               }
             : null,
           ...stationKinds.map((k): LegendItem => ({

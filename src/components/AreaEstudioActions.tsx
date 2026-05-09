@@ -8,6 +8,7 @@ import {
   type DeriveStrategy,
   enqueueDeriveAreaEstudio,
   enqueueProposeStations,
+  enqueueProposeSoilStations,
   enqueueUploadAreaEstudio,
   enqueueVegetation,
 } from "@/app/(app)/projects/[id]/actions";
@@ -109,6 +110,14 @@ export default function AreaEstudioActions({
     setEnqueueError(null);
     startTransition(async () => {
       const res = await enqueueVegetation(projectId);
+      handleResult(res);
+    });
+  }
+
+  function runSoilStations(): void {
+    setEnqueueError(null);
+    startTransition(async () => {
+      const res = await enqueueProposeSoilStations(projectId);
       handleResult(res);
     });
   }
@@ -319,6 +328,29 @@ export default function AreaEstudioActions({
           <span className="text-[10px] text-stone-500">
             Extrae zonas de vegetación del raster ESA WorldCover (10 m) para
             estratificar las estaciones de biología.
+          </span>
+        </div>
+      </div>
+
+      {/* Soil stations */}
+      <div className="space-y-2 border-t border-stone-200 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={runSoilStations}
+            disabled={pending || !hasAreaEstudio || activeJobId !== null}
+            className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {pending ? "Encolando…" : "Agregar estaciones de suelos"}
+          </button>
+          {!hasAreaEstudio && (
+            <span className="text-xs text-amber-700">
+              Generar área de estudio primero.
+            </span>
+          )}
+          <span className="text-[10px] text-stone-500">
+            Genera estaciones de muestreo de suelos estratificadas por
+            vegetación (pH, materia orgánica, metales).
           </span>
         </div>
       </div>

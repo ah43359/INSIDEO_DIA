@@ -16,6 +16,7 @@ import {
 import AreaEstudioPanel from "@/components/AreaEstudioPanel";
 import ProjectMap from "@/components/ProjectMap";
 import ReportesPanel from "@/components/ReportesPanel";
+import SamplingResultsPanel from "@/components/SamplingResultsPanel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -383,6 +384,17 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         }))}
       />
 
+      {/* Resultados de Monitoreo */}
+      <SamplingResultsPanel
+        projectId={id}
+        stations={stations.map((s) => ({
+          id: s.id,
+          station_code: s.station_code,
+          kind: s.kind,
+          target_receptor_nombre: s.target_receptor_nombre,
+        }))}
+      />
+
       {/* Reportes panel */}
       <ReportesPanel projectId={id} projectName={p.nombre_proyecto} />
 
@@ -480,7 +492,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                   <th className="px-3 py-2 font-medium">Warnings / Errors</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-100">
+<tbody className="divide-y divide-stone-100">
                 {subs.map((s) => {
                   const ok = s.schema_ok && s.components_ingested && (s.errors?.length ?? 0) === 0;
                   return (
