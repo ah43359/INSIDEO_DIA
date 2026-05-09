@@ -6,6 +6,7 @@ import {
   AGUA_MULTI_PARAMS,
   AGUA_SINGLE_PARAMS,
   AIRE_PARAMS,
+  FACTOR_STYLES,
   RUIDO_PARAMS,
   RUIDO_ZONES,
   SUELOS_CATEGORIES,
@@ -17,14 +18,8 @@ import {
   type NoiseZone,
   type SoilCategory,
 } from "@/lib/monitoreo/eca-registry";
-import {
-  exceedsAir,
-  exceedsAguaMulti,
-  exceedsRuido,
-  exceedsSuelos,
-  exceedsGroundwater,
-  formatValue,
-} from "@/lib/monitoreo/exceedance";
+import { formatValue } from "@/lib/monitoreo/exceedance";
+import { checkExceeds, getEcaDisplay } from "@/lib/monitoreo/factor-checks";
 
 export interface MatrixStation {
   id: string;
@@ -48,16 +43,6 @@ interface MonitoreoMatrixProps {
   readOnly?: boolean;
 }
 
-const factorStyles: Record<FactorKind, { bg: string; text: string; accent: string }> = {
-  aire:              { bg: "#DBEAFE", text: "#1E40AF", accent: "#3B82F6" },
-  agua_superficial:  { bg: "#E0F2FE", text: "#075985", accent: "#0EA5E9" },
-  agua_subterranea:  { bg: "#EFF6FF", text: "#1E40AF", accent: "#60A5FA" },
-  ruido:             { bg: "#FEF9C3", text: "#854D0E", accent: "#EAB308" },
-  suelos:            { bg: "#FEF3C7", text: "#92400E", accent: "#F59E0B" },
-  sedimentos:         { bg: "#FDF4FF", text: "#7E22CE", accent: "#A855F7" },
-  vibraciones:       { bg: "#F3F4F6", text: "#374151", accent: "#9CA3AF" },
-};
-
 export default function MonitoreoMatrix({
   factor,
   stations,
@@ -65,7 +50,7 @@ export default function MonitoreoMatrix({
   onCellChange,
   readOnly = false,
 }: MonitoreoMatrixProps) {
-  const style = factorStyles[factor] || factorStyles.aire;
+  const style = FACTOR_STYLES[factor] ?? FACTOR_STYLES.aire;
   const [editing, setEditing] = useState<{ station: string; param: string } | null>(null);
   const [draftValue, setDraftValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -95,58 +80,19 @@ export default function MonitoreoMatrix({
     setEditing(null);
   }
 
-  const getEcaDisplay = useCallback(
-    (paramId: string): string => {
-      if (factor === "agua_superficial") {
-        const p = AGUA_MULTI_PARAMS.find((x) => x.id === paramId);
-        return p?.thresholds[aguaCat] ?? "–";
-      }
-      if (factor === "ruido") {
-        const p = RUIDO_PARAMS.find((x) => x.id === paramId);
-        return p?.thresholds[ruidoZone] ?? "–";
-      }
-      if (factor === "suelos") {
-        const p = SUELOS_PARAMS.find((x) => x.id === paramId);
-        return p?.thresholds[suelosCat] ?? "–";
-      }
-      if (factor === "agua_subterranea") {
-        const p = AGUA_SUB_PARAMS.find((x) => x.id === paramId);
-        return p?.eca ?? "–";
-      }
-      return "–";
-    },
+  const selectors = { aguaCat, ruidoZone, suelosCat };
+
+  const ecaDisplayFor = useCallback(
+    (paramId: string) => getEcaDisplay(factor, paramId, selectors),
+    // selectors are primitives, listing them individually keeps the deps shallow
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [factor, aguaCat, ruidoZone, suelosCat],
   );
 
-  const checkExceeds = useCallback(
-    (paramId: string, raw: string | number | undefined): boolean => {
-      if (factor === "aire") {
-        const p = AIRE_PARAMS.find((x) => x.id === paramId);
-        return exceedsAir(raw, p?.eca ?? null);
-      }
-      if (factor === "agua_superficial") {
-        const p = AGUA_MULTI_PARAMS.find((x) => x.id === paramId);
-        if (!p) return false;
-        const cat3r = p.thresholds[aguaCat] ?? p.thresholds.cat3r;
-        return exceedsAguaMulti(raw, cat3r, "gt");
-      }
-      if (factor === "ruido") {
-        const p = RUIDO_PARAMS.find((x) => x.id === paramId);
-        if (!p) return false;
-        return exceedsRuido(raw, p.thresholds, ruidoZone);
-      }
-      if (factor === "suelos") {
-        const p = SUELOS_PARAMS.find((x) => x.id === paramId);
-        if (!p) return false;
-        return exceedsSuelos(raw, p.thresholds, suelosCat);
-      }
-      if (factor === "agua_subterranea") {
-        const p = AGUA_SUB_PARAMS.find((x) => x.id === paramId);
-        if (!p) return false;
-        return exceedsGroundwater(raw, p.eca, p.compare_op);
-      }
-      return false;
-    },
+  const exceedsFor = useCallback(
+    (paramId: string, raw: string | number | undefined) =>
+      checkExceeds(factor, paramId, raw, selectors),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [factor, aguaCat, ruidoZone, suelosCat],
   );
 
@@ -263,12 +209,12 @@ export default function MonitoreoMatrix({
                     {p.unit}
                   </td>
                   <td className="border border-stone-200 bg-blue-50 px-2 py-2 text-center text-xs font-medium text-blue-700">
-                    {getEcaDisplay(p.id)}
+                    {ecaDisplayFor(p.id)}
                   </td>
                   {stations.map((s) => {
                     const raw = results[s.code]?.[p.id];
                     const hasVal = raw != null && String(raw).trim() !== "";
-                    const exceeds = checkExceeds(p.id, raw);
+                    const exceeds = exceedsFor(p.id, raw);
 
                     const isEditing =
                       editing?.station === s.code && editing?.param === p.id;

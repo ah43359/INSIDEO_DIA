@@ -227,3 +227,30 @@ export const FACTOR_DEFS: FactorDef[] = [
 
 export const FACTOR_DEFS_MAP: Record<FactorKind, FactorDef> =
   Object.fromEntries(FACTOR_DEFS.map((f) => [f.id, f])) as Record<FactorKind, FactorDef>;
+
+// ─── Shared factor palette ───────────────────────────────────────────────────
+// Single source of truth for factor-specific colors. Used by MonitoreoMatrix,
+// the overview hub cards, and the Resumen step. Each entry includes:
+//   - bg / text / accent : the historic matrix palette (hex, used in inline styles)
+//   - badge              : tailwind class for pill/tab tinting
+//   - border             : tailwind class for the 3px top border on factor cards
+//   - icon               : single emoji glyph used as a quick visual marker
+
+export interface FactorStyle {
+  bg: string;
+  text: string;
+  accent: string;
+  badge: string;
+  border: string;
+  icon: string;
+}
+
+export const FACTOR_STYLES: Record<FactorKind, FactorStyle> = {
+  aire:              { bg: "#DBEAFE", text: "#1E40AF", accent: "#3B82F6", badge: "bg-blue-100 text-blue-800 border-blue-200",     border: "border-t-blue-500",   icon: "💨" },
+  agua_superficial:  { bg: "#E0F2FE", text: "#075985", accent: "#0EA5E9", badge: "bg-sky-100 text-sky-800 border-sky-200",         border: "border-t-sky-500",    icon: "💧" },
+  agua_subterranea:  { bg: "#EFF6FF", text: "#1E40AF", accent: "#60A5FA", badge: "bg-indigo-100 text-indigo-800 border-indigo-200", border: "border-t-indigo-500", icon: "🪨" },
+  ruido:             { bg: "#FEF9C3", text: "#854D0E", accent: "#EAB308", badge: "bg-amber-100 text-amber-800 border-amber-200",   border: "border-t-amber-500",  icon: "🔊" },
+  suelos:            { bg: "#FEF3C7", text: "#92400E", accent: "#F59E0B", badge: "bg-orange-100 text-orange-800 border-orange-200", border: "border-t-orange-500", icon: "🌱" },
+  sedimentos:        { bg: "#FDF4FF", text: "#7E22CE", accent: "#A855F7", badge: "bg-purple-100 text-purple-800 border-purple-200", border: "border-t-purple-500", icon: "🏖️" },
+  vibraciones:       { bg: "#F3F4F6", text: "#374151", accent: "#9CA3AF", badge: "bg-stone-100 text-stone-700 border-stone-300",   border: "border-t-stone-400",  icon: "📳" },
+};
