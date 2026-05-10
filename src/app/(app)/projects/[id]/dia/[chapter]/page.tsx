@@ -15,6 +15,7 @@ import { deriveCap5Prefill } from "@/lib/dia/cap5/derive";
 import { DG_FIELDS as CAP5_DG_FIELDS, SECTIONS as CAP5_SECTIONS } from "@/lib/dia/cap5/fields";
 import { deriveCap6Prefill } from "@/lib/dia/cap6/derive";
 import { DG_FIELDS as CAP6_DG_FIELDS, SECTIONS as CAP6_SECTIONS } from "@/lib/dia/cap6/fields";
+import { migrateCap6V1ToV2 } from "@/lib/dia/cap6/migration";
 import { deriveCap7Prefill } from "@/lib/dia/cap7/derive";
 import { DG_FIELDS as CAP7_DG_FIELDS, SECTIONS as CAP7_SECTIONS } from "@/lib/dia/cap7/fields";
 import { findChapter, isValidChapterId } from "@/lib/dia/chapters";
@@ -54,6 +55,7 @@ interface FrameworkChapterConfig {
   dgGroups: typeof CAP1_DG_FIELDS;
   initialActiveId: string;
   initiallyOpenIds: readonly string[];
+  migrate?: (state: { introFields: Record<string, string>; dgFields: Record<string, string>; content: Record<string, string> }) => { introFields: Record<string, string>; dgFields: Record<string, string>; content: Record<string, string> };
 }
 
 // Caps 1, 3, 4, 5, 6, 7 use the generic ChapterEditor. Cap. 2 keeps its
@@ -91,8 +93,9 @@ const FRAMEWORK_CHAPTERS: Partial<Record<ChapterId, FrameworkChapterConfig>> = {
     derive: deriveCap6Prefill,
     sections: CAP6_SECTIONS as unknown as typeof CAP1_SECTIONS,
     dgGroups: CAP6_DG_FIELDS as unknown as typeof CAP1_DG_FIELDS,
-    initialActiveId: "6.1",
-    initiallyOpenIds: ["6.0", "6.2"],
+    initialActiveId: "6.0.0",
+    initiallyOpenIds: ["6.0", "6.2", "6.3"],
+    migrate: migrateCap6V1ToV2,
   },
   7: {
     derive: deriveCap7Prefill,
@@ -194,6 +197,7 @@ export default async function DiaChapterPage({ params }: PageProps) {
         dgGroups={config.dgGroups}
         initialActiveId={config.initialActiveId}
         initiallyOpenIds={config.initiallyOpenIds}
+        migrate={config.migrate}
       />
     </div>
   );

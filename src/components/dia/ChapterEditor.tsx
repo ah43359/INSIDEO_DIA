@@ -37,6 +37,9 @@ export interface ChapterEditorProps {
   initialActiveId: string;
   /** Section ids whose subtree starts expanded. */
   initiallyOpenIds: readonly string[];
+  /** Optional one-shot migration applied after loading from localStorage
+   *  (e.g. Cap. 6 v1 → v2 schema migration). */
+  migrate?: (state: ChapterState) => ChapterState;
 }
 
 type GenerateState = "idle" | "generating" | "error";
@@ -52,6 +55,7 @@ export default function ChapterEditor({
   dgGroups,
   initialActiveId,
   initiallyOpenIds,
+  migrate,
 }: ChapterEditorProps) {
   const [state, setState] = useState<ChapterState>(prefill);
   const [hydrated, setHydrated] = useState(false);
@@ -63,9 +67,10 @@ export default function ChapterEditor({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setState(loadChapterState(chapterId, projectId, prefill));
+    const loaded = loadChapterState(chapterId, projectId, prefill);
+    setState(migrate ? migrate(loaded) : loaded);
     setHydrated(true);
-  }, [chapterId, projectId, prefill]);
+  }, [chapterId, projectId, prefill, migrate]);
 
   useEffect(() => {
     if (!hydrated) return;

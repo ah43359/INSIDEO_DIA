@@ -125,11 +125,18 @@ describe("Cap. 5 (Impactos) derive", () => {
 });
 
 describe("Cap. 6 (PMA) derive", () => {
-  it("seeds objective text and residuos normativa", () => {
+  it("seeds objective text and ECA references aligned with approved DIAs", () => {
     const r = deriveCap6Prefill(emptyInput);
-    expect(r.state.dgFields.pma_objetivo).toMatch(/prevenci[oó]n.*mitigaci[oó]n/i);
-    expect(r.state.dgFields.pma_residuosNormativa).toMatch(/Decreto Legislativo|D\.L\./);
+    // V2 schema: pma_objGenerales + ECA references
+    expect(r.state.dgFields.pma_objGenerales).toMatch(/prevenci[oó]n.*mitigaci[oó]n/i);
+    expect(r.state.dgFields.pma_pvaAire_normativa).toMatch(/D\.S\.\s*N°?\s*003-2017/);
+    expect(r.state.dgFields.pma_pvaRuido_normativa).toMatch(/085-2003/);
+    expect(r.state.dgFields.pma_pvaAguaSup_normativa).toMatch(/004-2017/);
     expect(r.warnings.length).toBeGreaterThan(0);
+  });
+  it("seeds responsable from cliente.razon_social", () => {
+    const r = deriveCap6Prefill(emptyInput);
+    expect(r.state.dgFields.pma_responsable).toContain("Minera Ejemplo");
   });
 });
 
