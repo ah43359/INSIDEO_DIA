@@ -23,6 +23,9 @@ import {
   saveChapterState,
 } from "@/lib/dia/framework/storage";
 import type { ChapterId } from "@/lib/dia/framework/manifest";
+import SynthesisModal, {
+  type SynthesisItem,
+} from "@/components/dia/SynthesisModal";
 
 export interface ChapterEditorProps {
   chapterId: ChapterId;
@@ -43,6 +46,13 @@ export interface ChapterEditorProps {
 }
 
 type GenerateState = "idle" | "generating" | "error";
+type SynthesisState = "idle" | "synthesizing" | "previewing" | "error";
+
+/** Chapters where the "Generar con IA" RAG button is enabled. Driven by
+ *  whether the corpus has been indexed for that chapter — currently
+ *  only Cap. 6 (Plan de Manejo Ambiental) has approved DIAs in the
+ *  E:/Architecture/DIA Examples/Cap6 folder. */
+const RAG_ENABLED_CHAPTERS: ReadonlySet<ChapterId> = new Set([6]);
 
 export default function ChapterEditor({
   chapterId,
@@ -65,6 +75,12 @@ export default function ChapterEditor({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // RAG synthesis state
+  const [synthState, setSynthState] = useState<SynthesisState>("idle");
+  const [synthItems, setSynthItems] = useState<SynthesisItem[]>([]);
+  const [synthErrors, setSynthErrors] = useState<Array<{ sectionId: string; message: string }>>([]);
+  const ragEnabled = RAG_ENABLED_CHAPTERS.has(chapterId);
 
   useEffect(() => {
     const loaded = loadChapterState(chapterId, projectId, prefill);
@@ -157,6 +173,106 @@ export default function ChapterEditor({
     window.setTimeout(() => setNotification(null), 2200);
   }
 
+  /** Collect all sections (leaves) that should be sent to the synthesis
+   *  endpoint. We include any leaf that doesn't already have user-typed
+   *  free-text in state.content[sectionId]. The user can re-run after
+   *  editing to refresh other sections too. */
+  function leavesToSynthesize(): Array<{ sectionId: string; sectionTitle: string; userFields: ChapterFields }> {
+    const out: Array<{ sectionId: string; sectionTitle: string; userFields: ChapterFields }> = [];
+    function walk(nodes: readonly SectionNode[]): void {
+      for (const node of nodes) {
+        const isLeaf = node.children.length === 0;
+        if (isLeaf) {
+          const hasContent = !!state.content[node.id]?.trim();
+          if (!hasContent) {
+            // Collect user fields for this section's structured group, if any
+            const userFields: ChapterFields = {};
+            if (node.structuredType) {
+              const fs = dgGroups[node.structuredType];
+              if (fs) {
+                for (const f of fs) {
+                  const v = state.dgFields[f.key];
+                  if (v && v.trim()) userFields[f.key] = v;
+                }
+              }
+            }
+            out.push({ sectionId: node.id, sectionTitle: node.title, userFields });
+          }
+        } else {
+          walk(node.children);
+        }
+      }
+    }
+    walk(sections);
+    // Cap to 50 sections (matches API limit)
+    return out.slice(0, 50);
+  }
+
+  async function handleSynthesize(): Promise<void> {
+    const targets = leavesToSynthesize();
+    if (targets.length === 0) {
+      flashNotice("Todas las secciones ya tienen contenido. Limpia alguna para volver a sintetizar.");
+      return;
+    }
+    setSynthState("synthesizing");
+    setErrorMsg(null);
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/dia/${chapterId}/synthesize`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sections: targets }),
+        },
+      );
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        const detail = (errBody as { error?: string; detail?: string }).error
+          ?? (errBody as { error?: string; detail?: string }).detail
+          ?? `Error ${response.status}`;
+        throw new Error(detail);
+      }
+      const json = (await response.json()) as {
+        results: Array<{
+          sectionId: string;
+          content: string;
+          citations: SynthesisItem["citations"];
+          passagesRetrieved: number;
+        }>;
+        errors: Array<{ sectionId: string; message: string }>;
+      };
+      // Map results back to titles
+      const titleById = new Map(targets.map((t) => [t.sectionId, t.sectionTitle]));
+      const items: SynthesisItem[] = json.results.map((r) => ({
+        sectionId: r.sectionId,
+        sectionTitle: titleById.get(r.sectionId) ?? r.sectionId,
+        content: r.content,
+        citations: r.citations,
+      }));
+      setSynthItems(items);
+      setSynthErrors(json.errors);
+      setSynthState("previewing");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Error desconocido");
+      setSynthState("error");
+    }
+  }
+
+  function acceptSynthesis(sectionIds: readonly string[]): void {
+    setState((s) => {
+      const nextContent = { ...s.content };
+      for (const sid of sectionIds) {
+        const item = synthItems.find((it) => it.sectionId === sid);
+        if (item) nextContent[sid] = item.content;
+      }
+      return { ...s, content: nextContent };
+    });
+    setSynthState("idle");
+    setSynthItems([]);
+    setSynthErrors([]);
+    flashNotice(`Aplicado a ${sectionIds.length} sección(es). Recuerda generar el Word para verlo.`);
+  }
+
   const fields = activeSection?.structuredType ? dgGroups[activeSection.structuredType] : undefined;
 
   return (
@@ -177,6 +293,23 @@ export default function ChapterEditor({
               "Generar Word"
             )}
           </button>
+          {ragEnabled && (
+            <button
+              onClick={handleSynthesize}
+              disabled={synthState === "synthesizing"}
+              className="flex items-center justify-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+              title="Rellena las secciones vacías usando ejemplos aprobados de DIAs anteriores"
+            >
+              {synthState === "synthesizing" ? (
+                <>
+                  <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                  Sintetizando…
+                </>
+              ) : (
+                <>✨ Generar con IA</>
+              )}
+            </button>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleExportJson}
@@ -252,6 +385,19 @@ export default function ChapterEditor({
           </div>
         )}
       </main>
+
+      <SynthesisModal
+        open={synthState === "previewing"}
+        items={synthItems}
+        errors={synthErrors}
+        onAcceptAll={() => acceptSynthesis(synthItems.map((i) => i.sectionId))}
+        onAcceptOne={(sid) => acceptSynthesis([sid])}
+        onCancel={() => {
+          setSynthState("idle");
+          setSynthItems([]);
+          setSynthErrors([]);
+        }}
+      />
     </div>
   );
 }
