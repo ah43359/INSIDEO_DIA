@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buildCap1Document } from "@/lib/dia/cap1/document";
 import { buildCap2Document } from "@/lib/dia/cap2/document";
+import { buildCap3Document } from "@/lib/dia/cap3/document";
+import { buildCap4Document } from "@/lib/dia/cap4/document";
+import { buildCap5Document } from "@/lib/dia/cap5/document";
+import { buildCap6Document } from "@/lib/dia/cap6/document";
+import { buildCap7Document } from "@/lib/dia/cap7/document";
 import { fromExportV7 as fromCap2ExportV7 } from "@/lib/dia/cap2/state";
 import { fromChapterExportV7 } from "@/lib/dia/framework/state";
 import { findChapter, isValidChapterId } from "@/lib/dia/chapters";
@@ -58,14 +63,33 @@ export async function POST(
 
   let buffer: Buffer;
   try {
-    if (entry.id === 1) {
-      const state = fromChapterExportV7(body);
-      buffer = await buildCap1Document(state, projectName);
-    } else if (entry.id === 2) {
+    if (entry.id === 2) {
       const cap2State = fromCap2ExportV7(body);
       buffer = await buildCap2Document(cap2State, projectName);
     } else {
-      return NextResponse.json({ error: "Capítulo no disponible" }, { status: 404 });
+      const state = fromChapterExportV7(body);
+      switch (entry.id) {
+        case 1:
+          buffer = await buildCap1Document(state, projectName);
+          break;
+        case 3:
+          buffer = await buildCap3Document(state, projectName);
+          break;
+        case 4:
+          buffer = await buildCap4Document(state, projectName);
+          break;
+        case 5:
+          buffer = await buildCap5Document(state, projectName);
+          break;
+        case 6:
+          buffer = await buildCap6Document(state, projectName);
+          break;
+        case 7:
+          buffer = await buildCap7Document(state, projectName);
+          break;
+        default:
+          return NextResponse.json({ error: "Capítulo no disponible" }, { status: 404 });
+      }
     }
   } catch (err) {
     return NextResponse.json(

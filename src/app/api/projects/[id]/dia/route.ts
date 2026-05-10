@@ -21,6 +21,11 @@ import {
   buildLocalizacion,
   buildObjetivos,
 } from "@/lib/dia/cap2/sections";
+import { buildLineaBase } from "@/lib/dia/cap3/sections";
+import { buildParticipacion } from "@/lib/dia/cap4/sections";
+import { buildImpactos } from "@/lib/dia/cap5/sections";
+import { buildPma } from "@/lib/dia/cap6/sections";
+import { buildEmpresaConsultora } from "@/lib/dia/cap7/sections";
 import { fromExportV7 as fromCap2ExportV7 } from "@/lib/dia/cap2/state";
 import { fromChapterExportV7 } from "@/lib/dia/framework/state";
 import { buildChapterDocumentBuffer } from "@/lib/dia/framework/document";
@@ -72,18 +77,20 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
 
   const allParagraphs: Paragraph[] = [];
 
+  // Section builder mapping for chapters that use the framework
+  // ChapterState shape (1, 3, 4, 5, 6, 7). Cap. 2 keeps its bespoke
+  // multi-section assembly because of its richer state schema.
+  const frameworkBuilders: Partial<Record<number, (state: ReturnType<typeof fromChapterExportV7>) => Paragraph[]>> = {
+    1: buildResumenEjecutivo,
+    3: buildLineaBase,
+    4: buildParticipacion,
+    5: buildImpactos,
+    6: buildPma,
+    7: buildEmpresaConsultora,
+  };
+
   for (const entry of DIA_CHAPTERS) {
     const payload = chapters[String(entry.id)];
-
-    if (entry.id === 1 && payload) {
-      try {
-        const state = fromChapterExportV7(payload);
-        allParagraphs.push(...buildResumenEjecutivo(state));
-        continue;
-      } catch {
-        // fall through to placeholder
-      }
-    }
 
     if (entry.id === 2 && payload) {
       try {
@@ -97,6 +104,17 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
         allParagraphs.push(...buildInfluencia(state));
         allParagraphs.push(...buildCronograma(state));
         allParagraphs.push(...buildDescripcion(state));
+        continue;
+      } catch {
+        // fall through to placeholder
+      }
+    }
+
+    const builder = frameworkBuilders[entry.id];
+    if (builder && payload) {
+      try {
+        const state = fromChapterExportV7(payload);
+        allParagraphs.push(...builder(state));
         continue;
       } catch {
         // fall through to placeholder

@@ -31,26 +31,26 @@ export const DIA_CHAPTERS: readonly ChapterRegistryEntry[] = [
     status: "editable",
     longTitle: "Capítulo 2 — Descripción del Proyecto",
   },
-  { id: 3, shortTitle: CHAPTER_TITLES[3], status: "planned", longTitle: "Capítulo 3 — Línea Base" },
+  { id: 3, shortTitle: CHAPTER_TITLES[3], status: "editable", longTitle: "Capítulo 3 — Línea Base" },
   {
     id: 4,
     shortTitle: CHAPTER_TITLES[4],
-    status: "planned",
+    status: "editable",
     longTitle: "Capítulo 4 — Plan de Participación Ciudadana",
   },
   {
     id: 5,
     shortTitle: CHAPTER_TITLES[5],
-    status: "planned",
+    status: "editable",
     longTitle: "Capítulo 5 — Identificación, Caracterización y Valoración de los Impactos",
   },
   {
     id: 6,
     shortTitle: CHAPTER_TITLES[6],
-    status: "planned",
+    status: "editable",
     longTitle: "Capítulo 6 — Plan de Manejo Ambiental",
   },
-  { id: 7, shortTitle: CHAPTER_TITLES[7], status: "planned", longTitle: "Capítulo 7 — Empresa Consultora" },
+  { id: 7, shortTitle: CHAPTER_TITLES[7], status: "editable", longTitle: "Capítulo 7 — Empresa Consultora" },
 ];
 
 export function findChapter(id: number): ChapterRegistryEntry | null {
