@@ -14,6 +14,7 @@
     "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
     "@tmcw/togeojson": "^7.1.2",
@@ -26,9 +27,12 @@
     "exceljs": "^4.4.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
     "maplibre-gl": "^5.24.0",
     "next": "16.2.4",
+    "openai": "^6.37.0",
     "papaparse": "^5.5.3",
+    "pg": "^8.20.0",
     "proj4": "^2.20.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -49,6 +53,7 @@
     "eslint-config-next": "16.2.4",
     "jsdom": "^26.0.0",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^3.0.0"
   }
