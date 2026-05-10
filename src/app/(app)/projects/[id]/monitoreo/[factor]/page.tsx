@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { notFound, useParams, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
+  FACTOR_DEFS,
   FACTOR_DEFS_MAP,
   FACTOR_STYLES,
   type FactorKind,
@@ -25,6 +25,9 @@ import KpiTile from "../_components/KpiTile";
 import CompletenessBar from "../_components/CompletenessBar";
 import ExceedanceSummary from "../_components/ExceedanceSummary";
 import ParamsTable from "../_components/ParamsTable";
+import MonitoreoHeader from "../_components/MonitoreoHeader";
+import FactorTabs from "../_components/FactorTabs";
+import Pill from "../_components/Pill";
 
 type MeasurementCampaign = "linea_base" | "construccion" | "operacion" | "cierre";
 
@@ -211,6 +214,36 @@ export default function MonitoreoFactorPage() {
     results,
   });
 
+  // Cross-factor exceedance badges for the tab strip — uses the all-stations and
+  // all-measurements payload already loaded on the page.
+  const factorBadges = useMemo(() => {
+    const badges: Partial<Record<FactorKind, number>> = {};
+    for (const f of FACTOR_DEFS) {
+      const fStations = stations.filter((s) => s.kind === f.id);
+      const fCodes = fStations.map((s) => s.station_code);
+      const fResults: Record<string, Record<string, string | number>> = {};
+      for (const m of measurements) {
+        const sta = stations.find((s) => s.id === m.station_id);
+        if (sta?.kind !== f.id) continue;
+        const code = sta.station_code;
+        if (!fResults[code]) fResults[code] = {};
+        for (const [paramId, paramData] of Object.entries(m.parameters)) {
+          fResults[code][paramId] = paramData.value;
+        }
+      }
+      const ex = summarizeExceedances({
+        factor: f.id,
+        stationCodes: fCodes,
+        results: fResults,
+      });
+      badges[f.id] = ex.length;
+    }
+    return badges;
+  }, [stations, measurements]);
+
+  const completitudPct =
+    completeness.total === 0 ? 0 : Math.round(completeness.ratio * 100);
+
   // ── Mutations ─────────────────────────────────────────────────────────────
   async function handleCellChange(stationCode: string, paramId: string, value: string) {
     if (!value || isNaN(parseFloat(value))) return;
@@ -331,35 +364,82 @@ export default function MonitoreoFactorPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-stone-500 mb-1">
-            <Link href={`/projects/${projectId}`} className="hover:text-stone-800">
-              {projectName || "Proyecto"}
-            </Link>
-            <span>/</span>
-            <Link
-              href={`/projects/${projectId}/monitoreo`}
-              className="hover:text-stone-800"
-            >
-              Resultados de Monitoreo
-            </Link>
-          </div>
-          <h1 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
-            <span style={{ color: style.accent }}>{style.icon}</span>
-            {factorDef.sectionTitle}
-          </h1>
-          <p className="text-sm text-stone-500">
-            {clientName && <span>{clientName} · </span>}
+      <MonitoreoHeader
+        breadcrumbs={[
+          { label: "Proyectos", href: "/projects" },
+          { label: projectName || "Proyecto", href: `/projects/${projectId}` },
+          { label: "Resultados de Monitoreo", href: `/projects/${projectId}/monitoreo` },
+          { label: factorDef.label },
+        ]}
+        title={factorDef.sectionTitle}
+        titleIcon={<span style={{ color: style.accent }}>{style.icon}</span>}
+        subtitle={
+          <>
+            {clientName && <span>{clientName}</span>}
+            {clientName && <span className="text-stone-300"> · </span>}
             <span className="text-stone-400">{factorDef.decree}</span>
-          </p>
-        </div>
-      </div>
+          </>
+        }
+        pills={
+          <>
+            <Pill icon="📅" tone="neutral">
+              Campaña: {CAMPAIGN_LABELS[campaign]}
+            </Pill>
+            <Pill icon="📍" tone="neutral">
+              {factorStationsWithDate.length} estaciones
+            </Pill>
+            <Pill icon="🔬" tone="neutral">
+              {activeParams.length} parámetros
+            </Pill>
+            <Pill
+              icon="📈"
+              tone={completitudPct >= 80 ? "ok" : completitudPct >= 40 ? "warn" : "neutral"}
+            >
+              Completitud {completitudPct}%
+            </Pill>
+            <Pill
+              dotColor={exceedances.length > 0 ? "#dc2626" : "#10b981"}
+              tone={exceedances.length > 0 ? "danger" : "ok"}
+            >
+              {exceedances.length > 0
+                ? `${exceedances.length} excedencias`
+                : "Sin excedencias"}
+            </Pill>
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={handleExportJson}
+              className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            >
+              <span aria-hidden>⤓</span>
+              <span className="hidden sm:inline">JSON</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportDocx}
+              disabled={docxLoading || factorStationsWithDate.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-md bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+            >
+              <span aria-hidden>📄</span>
+              <span>{docxLoading ? "Generando…" : "Exportar DOCX"}</span>
+            </button>
+          </>
+        }
+      />
+
+      <FactorTabs
+        projectId={projectId}
+        active={factor}
+        campaign={campaign}
+        badges={factorBadges}
+      />
 
       {/* Campaign selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-stone-600">Campaña:</span>
+        <span className="text-sm font-medium text-stone-600">Cambiar campaña:</span>
         {Object.entries(CAMPAIGN_LABELS).map(([key, label]) => (
           <button
             key={key}
