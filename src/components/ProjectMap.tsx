@@ -86,6 +86,10 @@ const LAYER_GROUPS = {
   roads:        ["roads-line"],
   // Concesiones mineras
   concesiones:  ["concesiones-fill", "concesiones-line", "concesiones-label"],
+  // IGN Carta Nacional 1:100k topographic contours.
+  contornos:    ["contours-line", "contours-label"],
+  // Peru country outline (low-zoom reference layer).
+  peruOutline:  ["peru-boundary-line"],
   // sampling-station kinds are filtered via filter expression rather
   // than separate layers (see toggleStationKindFilter).
 } as const;
@@ -96,7 +100,7 @@ interface ProjectMapProps {
   geojson: GeoJSON.FeatureCollection;
   /** Microcuencas (Pfafstetter UH) that intersect the project. Optional. */
   microcuencas?: GeoJSON.FeatureCollection | null;
-  /** Rivers near the project (HydroRIVERS, filtered by RPC). Optional. */
+  /** Rivers near the project (IGN Carta Nacional 1:100,000, filtered by RPC). Optional. */
   rivers?: GeoJSON.FeatureCollection | null;
   /** Centros poblados that fall in or near the área de estudio. Optional. */
   receptores?: GeoJSON.FeatureCollection | null;
@@ -112,6 +116,10 @@ interface ProjectMapProps {
   vegetationZones?: GeoJSON.FeatureCollection | null;
   /** Mining concessions (Concesiones Mineras) from INGEMMET Geocatmin. Optional. */
   concesiones?: GeoJSON.FeatureCollection | null;
+  /** Contour lines (IGN Carta Nacional 1:100,000) clipped to project buffer. Optional. */
+  contours?: GeoJSON.FeatureCollection | null;
+  /** Peru country outline (low-zoom reference). Optional. */
+  peruBoundary?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
 }
 
 // Color & ranking for sampling-station kinds (kept top-level so the
@@ -231,6 +239,8 @@ export default function ProjectMap({
   areaEfectiva,
   vegetationZones,
   concesiones,
+  contours,
+  peruBoundary,
 }: ProjectMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -251,6 +261,10 @@ export default function ProjectMap({
     districts: true,
     roads: true,
     concesiones: true,
+    // Contours hidden by default — they add a lot of ink and most users
+    // only want them when reading topography.
+    contornos: false,
+    peruOutline: true,
   });
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
@@ -611,8 +625,10 @@ export default function ProjectMap({
         },
       });
 
-      // Rivers — width scales with strahler order so main channels read
-      // through. Tributaries feather into hairlines at low zoom.
+      // Rivers — width scales with Strahler order when available
+      // (HydroRIVERS). IGN Carta Nacional streams have no Strahler
+      // attribute; in that case length_km drives a synthetic order so
+      // long named rivers still read as main channels.
       map.addSource("rivers", {
         type: "geojson",
         data: rivers ?? EMPTY_FC,
@@ -627,13 +643,83 @@ export default function ProjectMap({
           "line-width": [
             "interpolate",
             ["linear"],
-            ["coalesce", ["get", "strahler_order"], 1],
+            [
+              "coalesce",
+              ["get", "strahler_order"],
+              [
+                "case",
+                [">=", ["coalesce", ["get", "length_km"], 0], 80], 7,
+                [">=", ["coalesce", ["get", "length_km"], 0], 20], 5,
+                [">=", ["coalesce", ["get", "length_km"], 0], 5], 3,
+                1,
+              ],
+            ],
             1, 0.5,
             3, 1.0,
             5, 1.8,
             7, 2.8,
             9, 4.0,
           ],
+        },
+      });
+
+      // Curvas de nivel — IGN Carta Nacional 1:100,000 contours, clipped
+      // to a buffer of the área de estudio by the server (RPC). Major
+      // contours every 250 m render thicker than the 50 m base interval.
+      map.addSource("contours", {
+        type: "geojson",
+        data: contours ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "contours-line",
+        type: "line",
+        source: "contours",
+        paint: {
+          "line-color": "#78716c", // stone-500
+          "line-opacity": 0.55,
+          "line-width": [
+            "case",
+            ["==", ["%", ["coalesce", ["get", "altitud"], 0], 250], 0], 0.9,
+            0.35,
+          ],
+        },
+      });
+      map.addLayer({
+        id: "contours-label",
+        type: "symbol",
+        source: "contours",
+        minzoom: 13,
+        filter: ["==", ["%", ["coalesce", ["get", "altitud"], 0], 250], 0],
+        layout: {
+          "text-field": ["concat", ["to-string", ["get", "altitud"]], " m"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 10,
+          "symbol-placement": "line",
+          "symbol-spacing": 250,
+        },
+        paint: {
+          "text-color": "#57534e",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.2,
+        },
+      });
+
+      // Peru country outline — low-zoom reference layer (hidden past z7).
+      map.addSource("peru-boundary", {
+        type: "geojson",
+        data: peruBoundary
+          ? { type: "FeatureCollection", features: [peruBoundary] }
+          : EMPTY_FC,
+      });
+      map.addLayer({
+        id: "peru-boundary-line",
+        type: "line",
+        source: "peru-boundary",
+        maxzoom: 7,
+        paint: {
+          "line-color": "#0c4a6e", // sky-900
+          "line-width": 1.5,
+          "line-opacity": 0.7,
         },
       });
 
@@ -1182,6 +1268,17 @@ export default function ProjectMap({
     const concSrc = map.getSource("concesiones") as GeoJSONSource | undefined;
     if (concSrc) concSrc.setData(concesiones ?? EMPTY_FC);
 
+    const contoursSrc = map.getSource("contours") as GeoJSONSource | undefined;
+    if (contoursSrc) contoursSrc.setData(contours ?? EMPTY_FC);
+
+    const peruBoundarySrc = map.getSource("peru-boundary") as GeoJSONSource | undefined;
+    if (peruBoundarySrc)
+      peruBoundarySrc.setData(
+        peruBoundary
+          ? { type: "FeatureCollection", features: [peruBoundary] }
+          : EMPTY_FC,
+      );
+
     const deptSrc = map.getSource("departamentos") as GeoJSONSource | undefined;
     const provSrc = map.getSource("provincias") as GeoJSONSource | undefined;
     const distSrc = map.getSource("distritos") as GeoJSONSource | undefined;
@@ -1214,7 +1311,7 @@ export default function ProjectMap({
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, boundaryData]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData]);
 
   // Separate effect specifically for boundary data updates
   useEffect(() => {
@@ -1319,6 +1416,8 @@ export default function ProjectMap({
   const hasDistritos = (boundaryData.distritos?.features.length ?? 0) > 0;
   const hasRoads = false; // Roads not loaded yet
   const hasConcesiones = (concesiones?.features.length ?? 0) > 0;
+  const hasContours = (contours?.features.length ?? 0) > 0;
+  const hasPeruBoundary = peruBoundary !== null && peruBoundary !== undefined;
 
   // Distinct station kinds present, in stable order, for the legend.
   const stationKinds = useMemo<string[]>(() => {
@@ -1420,11 +1519,29 @@ export default function ProjectMap({
             : null,
           hasRivers
             ? {
-                label: "Ríos (HydroRIVERS)",
+                label: "Ríos (IGN 1:100k)",
                 swatch: "line" as const,
                 color: "#1d4ed8",
                 visible: groupVisible.rivers,
                 onToggle: () => toggleGroup("rivers"),
+              }
+            : null,
+          hasContours
+            ? {
+                label: "Curvas de nivel (IGN 1:100k)",
+                swatch: "line" as const,
+                color: "#78716c",
+                visible: groupVisible.contornos,
+                onToggle: () => toggleGroup("contornos"),
+              }
+            : null,
+          hasPeruBoundary
+            ? {
+                label: "Límite Perú",
+                swatch: "line" as const,
+                color: "#0c4a6e",
+                visible: groupVisible.peruOutline,
+                onToggle: () => toggleGroup("peruOutline"),
               }
             : null,
           hasConcesiones

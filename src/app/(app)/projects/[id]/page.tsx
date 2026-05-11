@@ -65,6 +65,8 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: vegetationRows, error: vegetationError },
     { data: areaEfectivaRows, error: areaEfectivaError },
     { data: concesionesRows, error: concesionesError },
+    { data: contoursRows, error: contoursError },
+    { data: peruBoundaryRows, error: peruBoundaryError },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -90,7 +92,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("project_features", { p_id: id }),
     supabase.rpc("get_microcuencas_for_project", { p_project_id: id }),
     supabase.rpc("get_area_estudio_for_project", { p_project_id: id }),
-    supabase.rpc("get_rivers_for_project", { p_project_id: id, p_buffer_m: 5000 }),
+    supabase.rpc("get_streams_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_centros_poblados_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_sampling_stations_for_project", { p_project_id: id }),
     supabase.rpc("get_vegetation_for_project", { p_project_id: id }),
@@ -99,6 +101,8 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       p_buffer_m: 100,
     }),
     supabase.rpc("get_all_concesiones", { p_project_id: id }),
+    supabase.rpc("get_contours_for_project", { p_project_id: id, p_buffer_m: 2000 }),
+    supabase.rpc("get_peru_boundary"),
   ]);
 
   if (projectError || !project) {
@@ -234,6 +238,44 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       },
     })),
   };
+
+  // Curvas de nivel — IGN Carta Nacional 1:100,000.
+  interface ContourRow {
+    id: number;
+    altitud: number;
+    geom_geojson: string;
+  }
+  const contours = (contoursRows ?? []) as ContourRow[];
+  const contoursFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: contours.map((c) => ({
+      type: "Feature",
+      id: c.id,
+      geometry: JSON.parse(c.geom_geojson) as GeoJSON.Geometry,
+      properties: {
+        altitud: c.altitud,
+      },
+    })),
+  };
+
+  // Peru country outline (low-zoom reference layer).
+  interface PeruBoundaryRow {
+    id: number;
+    geom_geojson: string;
+  }
+  const peruBoundaryRow =
+    ((peruBoundaryRows ?? []) as PeruBoundaryRow[])[0] ?? null;
+  const peruBoundaryFeature: GeoJSON.Feature<
+    GeoJSON.MultiPolygon | GeoJSON.Polygon
+  > | null = peruBoundaryRow
+    ? {
+        type: "Feature",
+        geometry: JSON.parse(peruBoundaryRow.geom_geojson) as
+          | GeoJSON.MultiPolygon
+          | GeoJSON.Polygon,
+        properties: {},
+      }
+    : null;
 
   const areaFeature: GeoJSON.Feature<
     GeoJSON.MultiPolygon | GeoJSON.Polygon
@@ -374,6 +416,8 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             areaEfectiva={areaEfectiva}
             vegetationFc={vegetationFc}
             concesionesFc={concesionesFc}
+            contoursFc={contoursFc}
+            peruBoundaryFeature={peruBoundaryFeature}
             microcuencasError={microcuencasError}
             areaError={areaError}
             areaEfectivaError={areaEfectivaError}
@@ -382,6 +426,8 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             stationsError={stationsError}
             vegetationError={vegetationError}
             concesionesError={concesionesError}
+            contoursError={contoursError}
+            peruBoundaryError={peruBoundaryError}
             microcuencas={microcuencas}
             receptores={receptores}
             stations={stations}
@@ -424,6 +470,8 @@ function ResumenTab({
   areaEfectiva,
   vegetationFc,
   concesionesFc,
+  contoursFc,
+  peruBoundaryFeature,
   microcuencasError,
   areaError,
   areaEfectivaError,
@@ -432,6 +480,8 @@ function ResumenTab({
   stationsError,
   vegetationError,
   concesionesError,
+  contoursError,
+  peruBoundaryError,
   microcuencas,
   receptores,
   stations,
@@ -455,6 +505,8 @@ function ResumenTab({
   areaEfectiva: AreaEfectivaRow | null;
   vegetationFc: GeoJSON.FeatureCollection;
   concesionesFc: GeoJSON.FeatureCollection;
+  contoursFc: GeoJSON.FeatureCollection;
+  peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   microcuencasError: { message: string } | null;
   areaError: { message: string } | null;
   areaEfectivaError: { message: string } | null;
@@ -463,6 +515,8 @@ function ResumenTab({
   stationsError: { message: string } | null;
   vegetationError: { message: string } | null;
   concesionesError: { message: string } | null;
+  contoursError: { message: string } | null;
+  peruBoundaryError: { message: string } | null;
   microcuencas: MicrocuencaRow[];
   receptores: CentroPobladoRow[];
   stations: SamplingStationRow[];
@@ -481,6 +535,8 @@ function ResumenTab({
     stationsError?.message ??
     vegetationError?.message ??
     concesionesError?.message ??
+    contoursError?.message ??
+    peruBoundaryError?.message ??
     null;
 
   return (
@@ -530,6 +586,8 @@ function ResumenTab({
             areaEfectiva={areaEfectiva}
             vegetationFc={vegetationFc}
             concesionesFc={concesionesFc}
+            contoursFc={contoursFc}
+            peruBoundaryFeature={peruBoundaryFeature}
             vegetation={vegetation}
             layerError={layerError}
           />
@@ -555,6 +613,8 @@ function ResumenTab({
                 areaEfectiva={areaEfectivaFeature}
                 vegetationZones={vegetationFc}
                 concesiones={concesionesFc}
+                contours={contoursFc}
+                peruBoundary={peruBoundaryFeature}
               />
             </div>
           )}
@@ -818,6 +878,8 @@ function MapWithLeyenda({
   areaEfectiva,
   vegetationFc,
   concesionesFc,
+  contoursFc,
+  peruBoundaryFeature,
   vegetation,
   layerError,
 }: {
@@ -833,6 +895,8 @@ function MapWithLeyenda({
   areaEfectiva: AreaEfectivaRow | null;
   vegetationFc: GeoJSON.FeatureCollection;
   concesionesFc: GeoJSON.FeatureCollection;
+  contoursFc: GeoJSON.FeatureCollection;
+  peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   vegetation: VegetationZone[];
   layerError: string | null;
 }) {
@@ -881,6 +945,8 @@ function MapWithLeyenda({
               areaEfectiva={areaEfectivaFeature}
               vegetationZones={vegetationFc}
               concesiones={concesionesFc}
+              contours={contoursFc}
+              peruBoundary={peruBoundaryFeature}
             />
           )}
           {layerError && (
