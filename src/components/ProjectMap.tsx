@@ -84,6 +84,8 @@ const LAYER_GROUPS = {
   districts:    ["distritos-fill", "distritos-line"],
   // Roads
   roads:        ["roads-line"],
+  // Concesiones mineras
+  concesiones:  ["concesiones-fill", "concesiones-line", "concesiones-label"],
   // sampling-station kinds are filtered via filter expression rather
   // than separate layers (see toggleStationKindFilter).
 } as const;
@@ -108,6 +110,8 @@ interface ProjectMapProps {
   areaEfectiva?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   /** Vegetation zones derived from ESA WorldCover. Optional. */
   vegetationZones?: GeoJSON.FeatureCollection | null;
+  /** Mining concessions (Concesiones Mineras) from INGEMMET Geocatmin. Optional. */
+  concesiones?: GeoJSON.FeatureCollection | null;
 }
 
 // Color & ranking for sampling-station kinds (kept top-level so the
@@ -219,13 +223,14 @@ function asAreaFeatureCollection(
 export default function ProjectMap({
   geojson,
   microcuencas,
-rivers,
+  rivers,
   receptores,
   samplingStations,
   areaEstudio,
   areaEstudioStatus,
   areaEfectiva,
   vegetationZones,
+  concesiones,
 }: ProjectMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -245,6 +250,7 @@ rivers,
     provinces: true,
     districts: true,
     roads: true,
+    concesiones: true,
   });
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
@@ -628,6 +634,70 @@ rivers,
             7, 2.8,
             9, 4.0,
           ],
+        },
+      });
+
+      // Concesiones mineras — mining concessions from INGEMMET Geocatmin.
+      // The project's own concession (is_own) gets a distinct outline.
+      map.addSource("concesiones", {
+        type: "geojson",
+        data: concesiones ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "concesiones-fill",
+        type: "fill",
+        source: "concesiones",
+        paint: {
+          "fill-color": [
+            "case",
+            ["get", "is_own"],
+            "#fbbf24", // amber-400 — project's own concession
+            "#d4a017", // golden
+          ],
+          "fill-opacity": [
+            "case",
+            ["get", "is_own"],
+            0.18,
+            0.08,
+          ],
+        },
+      });
+      map.addLayer({
+        id: "concesiones-line",
+        type: "line",
+        source: "concesiones",
+        paint: {
+          "line-color": [
+            "case",
+            ["get", "is_own"],
+            "#d97706", // amber-600 — project's own concession
+            "#b45309", // amber-800
+          ],
+          "line-width": [
+            "case",
+            ["get", "is_own"],
+            2.5,
+            1,
+          ],
+          "line-dasharray": [4, 3],
+        },
+      });
+      map.addLayer({
+        id: "concesiones-label",
+        type: "symbol",
+        source: "concesiones",
+        minzoom: 10,
+        layout: {
+          "text-field": ["get", "codigo"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 10,
+          "text-offset": [0, 0.8],
+          "text-anchor": "top",
+        },
+        paint: {
+          "text-color": "#78350f",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.2,
         },
       });
 
@@ -1016,6 +1086,33 @@ rivers,
           .addTo(map);
       });
 
+      // Concesión minera popup
+      map.on("click", "concesiones-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">${props.nombre}</div>
+            <div>Código: ${props.codigo}</div>
+            ${props.titular ? `<div>Titular: ${props.titular}</div>` : ""}
+            ${props.area_ha ? `<div>Área: ${Number(props.area_ha).toLocaleString("es-PE", { maximumFractionDigits: 1 })} ha</div>` : ""}
+            ${props.estado ? `<div>Estado: ${props.estado}</div>` : ""}
+            ${props.tipo ? `<div>Tipo: ${props.tipo}</div>` : ""}
+            ${props.is_own ? '<div style="margin-top:4px; color: #d97706; font-weight: 600;">Concesión del proyecto</div>' : ""}
+          </div>`;
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+      map.on("mouseenter", "concesiones-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "concesiones-fill", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
       // Vegetation zone popup
       map.on("click", "vegetation-fill", (e) => {
         const f = e.features?.[0];
@@ -1082,6 +1179,9 @@ rivers,
     const vegSrc = map.getSource("vegetation") as GeoJSONSource | undefined;
     if (vegSrc) vegSrc.setData(vegetationZones ?? EMPTY_FC);
 
+    const concSrc = map.getSource("concesiones") as GeoJSONSource | undefined;
+    if (concSrc) concSrc.setData(concesiones ?? EMPTY_FC);
+
     const deptSrc = map.getSource("departamentos") as GeoJSONSource | undefined;
     const provSrc = map.getSource("provincias") as GeoJSONSource | undefined;
     const distSrc = map.getSource("distritos") as GeoJSONSource | undefined;
@@ -1114,7 +1214,7 @@ rivers,
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, boundaryData]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, boundaryData]);
 
   // Separate effect specifically for boundary data updates
   useEffect(() => {
@@ -1218,6 +1318,7 @@ rivers,
   const hasProvincias = (boundaryData.provincias?.features.length ?? 0) > 0;
   const hasDistritos = (boundaryData.distritos?.features.length ?? 0) > 0;
   const hasRoads = false; // Roads not loaded yet
+  const hasConcesiones = (concesiones?.features.length ?? 0) > 0;
 
   // Distinct station kinds present, in stable order, for the legend.
   const stationKinds = useMemo<string[]>(() => {
@@ -1324,6 +1425,15 @@ rivers,
                 color: "#1d4ed8",
                 visible: groupVisible.rivers,
                 onToggle: () => toggleGroup("rivers"),
+              }
+            : null,
+          hasConcesiones
+            ? {
+                label: "Concesiones mineras",
+                swatch: "dashedLine" as const,
+                color: "#b45309",
+                visible: groupVisible.concesiones,
+                onToggle: () => toggleGroup("concesiones"),
               }
             : null,
           hasReceptores
@@ -1517,36 +1627,57 @@ function BasemapSelector({
 
 
 function MapLegend({ items }: { items: LegendItem[] }) {
+  const [open, setOpen] = useState(true);
   if (items.length === 0) return null;
+  const visibleCount = items.filter((i) => i.visible).length;
   return (
     <div
       role="region"
       aria-label="Leyenda del mapa"
-      className="absolute left-3 bottom-3 z-10 max-w-[16rem] rounded-md border border-stone-200 bg-white/95 p-2.5 text-xs shadow-sm backdrop-blur"
+      className="absolute left-3 bottom-3 z-10 max-w-[14rem] rounded-md border border-stone-200 bg-white/95 text-xs shadow-sm backdrop-blur"
     >
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
-        Capas <span className="font-normal normal-case">(click para ocultar)</span>
-      </p>
-      <ul className="space-y-1">
-        {items.map((item) => (
-          <li key={item.label}>
-            <button
-              type="button"
-              onClick={item.onToggle}
-              aria-pressed={item.visible}
-              className={
-                "flex w-full items-center gap-2 rounded px-1 py-0.5 text-left transition-opacity hover:bg-stone-100 " +
-                (item.visible ? "opacity-100" : "opacity-40")
-              }
-            >
-              <LegendSwatch item={item} />
-              <span className={item.visible ? "text-stone-700" : "text-stone-500 line-through"}>
-                {item.label}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left hover:bg-stone-50"
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+          Capas{' '}
+          <span className="font-normal normal-case text-stone-400">
+            ({visibleCount}/{items.length})
+          </span>
+        </span>
+        <svg
+          aria-hidden
+          className={`h-3 w-3 text-stone-400 transition-transform ${open ? "rotate-180" : ""}`}
+          viewBox="0 0 12 12"
+          fill="none"
+        >
+          <path d="M3 5 L6 8 L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="max-h-72 space-y-0.5 overflow-y-auto border-t border-stone-200 px-2.5 pb-2 pt-1.5">
+          {items.map((item) => (
+            <li key={item.label}>
+              <button
+                type="button"
+                onClick={item.onToggle}
+                aria-pressed={item.visible}
+                className={
+                  "flex w-full items-center gap-2 rounded px-1 py-[3px] text-left transition-opacity hover:bg-stone-100 " +
+                  (item.visible ? "opacity-100" : "opacity-40")
+                }
+              >
+                <LegendSwatch item={item} />
+                <span className={"truncate " + (item.visible ? "text-stone-700" : "text-stone-500 line-through")}>
+                  {item.label}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

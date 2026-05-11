@@ -7,6 +7,7 @@ import {
   type AreaEstudioRow,
   type CentroPobladoRow,
   type ComponenteInventario,
+  type ConcesionRow,
   type MicrocuencaRow,
   type Project,
   type RfiSubmission,
@@ -18,8 +19,20 @@ import ProjectMap from "@/components/ProjectMap";
 import ReportesPanel from "@/components/ReportesPanel";
 import SamplingResultsPanel from "@/components/SamplingResultsPanel";
 
+const TABS = [
+  { id: "resumen", label: "Resumen" },
+  { id: "mapa", label: "Mapa" },
+  { id: "componentes", label: "Componentes" },
+  { id: "areas", label: "Áreas" },
+  { id: "linea_base", label: "Línea base" },
+  { id: "documentos", label: "Documentos" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }
 
 interface ProjectRow extends Project {
@@ -33,8 +46,10 @@ interface ProjectRow extends Project {
   } | null;
 }
 
-export default async function ProjectDetailPage({ params }: PageProps) {
-  const { id } = await params;
+export default async function ProjectDetailPage({ params, searchParams }: PageProps) {
+  const [{ id }, { tab: rawTab }] = await Promise.all([params, searchParams]);
+  const activeTab: TabId = (TABS.some((t) => t.id === rawTab) ? rawTab : "resumen") as TabId;
+  const resumenV2 = process.env.FEATURE_RESUMEN_V2 === "true";
   const supabase = await createClient();
 
   const [
@@ -49,6 +64,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     { data: stationsRows, error: stationsError },
     { data: vegetationRows, error: vegetationError },
     { data: areaEfectivaRows, error: areaEfectivaError },
+    { data: concesionesRows, error: concesionesError },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -82,6 +98,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       p_project_id: id,
       p_buffer_m: 100,
     }),
+    supabase.rpc("get_all_concesiones", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -199,6 +216,25 @@ export default async function ProjectDetailPage({ params }: PageProps) {
      })),
    };
 
+  const concesiones = (concesionesRows ?? []) as ConcesionRow[];
+  const concesionesFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: concesiones.map((c) => ({
+      type: "Feature",
+      id: c.id,
+      geometry: JSON.parse(c.geom_geojson) as GeoJSON.Geometry,
+      properties: {
+        codigo: c.codigo,
+        nombre: c.nombre,
+        titular: c.titular,
+        area_ha: c.area_ha,
+        estado: c.estado,
+        tipo: c.tipo,
+        is_own: c.is_own,
+      },
+    })),
+  };
+
   const areaFeature: GeoJSON.Feature<
     GeoJSON.MultiPolygon | GeoJSON.Polygon
   > | null = area
@@ -244,27 +280,213 @@ export default async function ProjectDetailPage({ params }: PageProps) {
   );
 
   return (
-    <div className="space-y-8">
-      <header>
-        <Link
-          href="/projects"
-          className="text-sm text-stone-500 hover:text-stone-900"
-        >
-          ← Proyectos
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+    <div className="-mx-8 -mt-6 overflow-x-clip">
+      {/* ── HERO ─────────────────────────────────────────────────────── */}
+      <header className="border-b border-stone-100 bg-white px-8 pb-5 pt-7">
+        {/* Breadcrumb */}
+        <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-2 text-xs text-stone-400">
+          <Link href="/projects" className="transition-colors hover:text-emerald-600">
+            Proyectos
+          </Link>
+          <svg aria-hidden viewBox="0 0 12 12" fill="none" className="h-3 w-3 shrink-0">
+            <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="max-w-xs truncate font-medium text-stone-600">{p.nombre_proyecto}</span>
+        </nav>
+
+        {/* Giant serif project name */}
+        <h1 className="font-serif text-3xl font-semibold leading-tight tracking-tight text-stone-900 sm:text-4xl lg:text-[2.85rem]">
           {p.nombre_proyecto}
         </h1>
-        <p className="text-sm text-stone-600">
-          {p.clientes?.razon_social}
-          {p.clientes?.ruc ? (
-            <span className="text-stone-400"> · RUC {p.clientes.ruc}</span>
+
+        {/* Titular subtitle */}
+        {p.clientes?.razon_social ? (
+          <p className="mt-2 text-sm text-stone-500">
+            {p.clientes.razon_social}
+            {p.clientes.ruc ? (
+              <span className="text-stone-300"> · RUC {p.clientes.ruc}</span>
+            ) : null}
+          </p>
+        ) : null}
+
+        {/* Metadata chips */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Chip>
+            {p.region} / {p.provincia} / {p.distrito}
+          </Chip>
+          {p.commodity?.map((c) => (
+            <Chip key={c} variant="emerald">{c}</Chip>
+          ))}
+          <Chip>
+            Zona {p.zona_utm}S · {p.datum ?? "WGS 84"}
+          </Chip>
+          {p.area_total_ha ? (
+            <Chip>
+              {p.area_total_ha.toLocaleString("es-PE")} ha totales
+            </Chip>
           ) : null}
-        </p>
+          {p.proyecto_brownfield ? <Chip variant="amber">Brownfield</Chip> : null}
+          {p.codigo_cm ? <Chip>CM {p.codigo_cm}</Chip> : null}
+          {p.metodo_exploracion?.length ? (
+            <Chip>{p.metodo_exploracion.join(", ")}</Chip>
+          ) : null}
+        </div>
       </header>
 
-      {/* Top row: project info + cliente info */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* ── TAB STRIP ────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-20 border-b border-stone-200 bg-white/95 backdrop-blur-sm">
+        <nav
+          className="flex items-end gap-0 overflow-x-auto px-8 scrollbar-none"
+          aria-label="Secciones del proyecto"
+        >
+          {TABS.map((t) => (
+            <Link
+              key={t.id}
+              href={`/projects/${id}?tab=${t.id}`}
+              className={`-mb-px whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                activeTab === t.id
+                  ? "border-emerald-600 text-emerald-700"
+                  : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-800"
+              }`}
+              aria-current={activeTab === t.id ? "page" : undefined}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+
+      {/* ── TAB CONTENT ──────────────────────────────────────────────── */}
+      <div className="px-8 py-6">
+        {activeTab === "resumen" ? (
+          <ResumenTab
+            p={p}
+            id={id}
+            geojson={geojson}
+            featuresError={featuresError}
+            microcuencasFc={microcuencasFc}
+            riversFc={riversFc}
+            receptoresFc={receptoresFc}
+            stationsFc={stationsFc}
+            areaFeature={areaFeature}
+            area={area}
+            areaEfectivaFeature={areaEfectivaFeature}
+            areaEfectiva={areaEfectiva}
+            vegetationFc={vegetationFc}
+            concesionesFc={concesionesFc}
+            microcuencasError={microcuencasError}
+            areaError={areaError}
+            areaEfectivaError={areaEfectivaError}
+            riversError={riversError}
+            receptoresError={receptoresError}
+            stationsError={stationsError}
+            vegetationError={vegetationError}
+            concesionesError={concesionesError}
+            microcuencas={microcuencas}
+            receptores={receptores}
+            stations={stations}
+            vegetation={vegetation}
+            inv={inv}
+            grouped={grouped}
+            subs={subs}
+            resumenV2={resumenV2}
+          />
+        ) : (
+          <EmptyTab tab={activeTab} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Resumen tab ───────────────────────────────────────────────────────────────
+
+interface VegetationZone {
+  id: string;
+  class_code: string | null;
+  class_name: string;
+  area_ha: number | null;
+  geom_geojson: string;
+}
+
+function ResumenTab({
+  p,
+  id,
+  geojson,
+  featuresError,
+  microcuencasFc,
+  riversFc,
+  receptoresFc,
+  stationsFc,
+  areaFeature,
+  area,
+  areaEfectivaFeature,
+  areaEfectiva,
+  vegetationFc,
+  concesionesFc,
+  microcuencasError,
+  areaError,
+  areaEfectivaError,
+  riversError,
+  receptoresError,
+  stationsError,
+  vegetationError,
+  concesionesError,
+  microcuencas,
+  receptores,
+  stations,
+  vegetation,
+  inv,
+  grouped,
+  subs,
+  resumenV2,
+}: {
+  p: ProjectRow;
+  id: string;
+  geojson: GeoJSON.FeatureCollection;
+  featuresError: { message: string } | null;
+  microcuencasFc: GeoJSON.FeatureCollection;
+  riversFc: GeoJSON.FeatureCollection;
+  receptoresFc: GeoJSON.FeatureCollection;
+  stationsFc: GeoJSON.FeatureCollection;
+  areaFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  area: AreaEstudioRow | null;
+  areaEfectivaFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  areaEfectiva: AreaEfectivaRow | null;
+  vegetationFc: GeoJSON.FeatureCollection;
+  concesionesFc: GeoJSON.FeatureCollection;
+  microcuencasError: { message: string } | null;
+  areaError: { message: string } | null;
+  areaEfectivaError: { message: string } | null;
+  riversError: { message: string } | null;
+  receptoresError: { message: string } | null;
+  stationsError: { message: string } | null;
+  vegetationError: { message: string } | null;
+  concesionesError: { message: string } | null;
+  microcuencas: MicrocuencaRow[];
+  receptores: CentroPobladoRow[];
+  stations: SamplingStationRow[];
+  vegetation: VegetationZone[];
+  inv: ComponenteInventario[];
+  grouped: Record<string, ComponenteInventario[]>;
+  subs: RfiSubmission[];
+  resumenV2: boolean;
+}) {
+  const layerError =
+    microcuencasError?.message ??
+    areaError?.message ??
+    areaEfectivaError?.message ??
+    riversError?.message ??
+    receptoresError?.message ??
+    stationsError?.message ??
+    vegetationError?.message ??
+    concesionesError?.message ??
+    null;
+
+  return (
+    <div className="space-y-6">
+      {/* PROYECTO / TITULAR two-column block */}
+      <div className="grid gap-5 md:grid-cols-2">
         <Card title="Proyecto">
           <DefList
             items={[
@@ -273,10 +495,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
               ["Área total", p.area_total_ha ? `${p.area_total_ha} ha` : "—"],
               ["UTM / Datum", `${p.zona_utm}S · ${p.datum ?? "WGS 84"}`],
               ["Commodity", p.commodity?.join(", ") ?? "—"],
-              [
-                "Método de exploración",
-                p.metodo_exploracion?.join(", ") ?? "—",
-              ],
+              ["Método de exploración", p.metodo_exploracion?.join(", ") ?? "—"],
               ["Brownfield", p.proyecto_brownfield ? "Sí" : "No"],
             ]}
           />
@@ -295,76 +514,55 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      {/* Map */}
-      <Card
-        title={`Componentes georreferenciados (${geojson.features.length})`}
-      >
-        {featuresError ? (
-          <p className="text-sm text-red-600">
-            No se pudo cargar la geometría: {featuresError.message}
-          </p>
-        ) : geojson.features.length === 0 ? (
-          <p className="text-sm text-stone-500">
-            Sin geometría cargada para este proyecto.
-          </p>
-        ) : (
-          <ProjectMap
+      {/* Map card — Phase 2 layout (with leyenda, vegetation bar, área efectiva) or plain fallback */}
+      {resumenV2 ? (
+        <>
+          <MapWithLeyenda
             geojson={geojson}
-            microcuencas={microcuencasFc}
-            rivers={riversFc}
-            receptores={receptoresFc}
-            samplingStations={stationsFc}
-            areaEstudio={areaFeature}
-            areaEstudioStatus={area?.status ?? null}
-            areaEfectiva={areaEfectivaFeature}
-            vegetationZones={vegetationFc}
+            featuresError={featuresError}
+            microcuencasFc={microcuencasFc}
+            riversFc={riversFc}
+            receptoresFc={receptoresFc}
+            stationsFc={stationsFc}
+            areaFeature={areaFeature}
+            area={area}
+            areaEfectivaFeature={areaEfectivaFeature}
+            areaEfectiva={areaEfectiva}
+            vegetationFc={vegetationFc}
+            concesionesFc={concesionesFc}
+            vegetation={vegetation}
+            layerError={layerError}
           />
-        )}
-        {(microcuencasError || areaError || areaEfectivaError || riversError || receptoresError || stationsError || vegetationError) ? (
-          <p className="mt-2 text-xs text-amber-700">
-            Error cargando capas: {
-              microcuencasError?.message || areaError?.message ||
-              areaEfectivaError?.message ||
-              riversError?.message || receptoresError?.message ||
-              stationsError?.message || vegetationError?.message
-            }
-          </p>
-        ) : null}
-      </Card>
-
-      {/* Área efectiva — small footprint polygon (convex hull + buffer) */}
-      {areaEfectiva ? (
-        <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold text-stone-700">Área efectiva</h2>
-            <span className="text-xs text-stone-500">
-              Convex hull + {areaEfectiva.buffer_m} m buffer
-            </span>
-          </div>
-          <p className="mb-3 text-xs text-stone-500">
-            Polígono mínimo que envuelve todos los componentes del proyecto.
-            Es el footprint físico — distinto del área de estudio (regulatoria)
-            y del área de influencia (basada en impactos, en una fase posterior).
-          </p>
-          <dl className="grid grid-cols-[160px_1fr] gap-y-2 text-sm">
-            <dt className="text-stone-500">Área</dt>
-            <dd className="text-stone-900 tabular-nums">
-              {areaEfectiva.area_ha.toLocaleString("es-PE", {
-                maximumFractionDigits: 2,
-              })}{" "}
-              ha
-            </dd>
-            <dt className="text-stone-500">Buffer</dt>
-            <dd className="text-stone-900 tabular-nums">
-              {areaEfectiva.buffer_m} m
-            </dd>
-            <dt className="text-stone-500">Componentes</dt>
-            <dd className="text-stone-900 tabular-nums">
-              {areaEfectiva.components_count}
-            </dd>
-          </dl>
-        </section>
-      ) : null}
+          <VegetacionBar vegetation={vegetation} />
+          {areaEfectiva && <AreaEfectivaCallout areaEfectiva={areaEfectiva} />}
+        </>
+      ) : (
+        <Card title={`Mapa del proyecto · ${geojson.features.length} componentes georreferenciados`}>
+          {featuresError ? (
+            <p className="text-sm text-red-600">{featuresError.message}</p>
+          ) : geojson.features.length === 0 ? (
+            <p className="text-sm text-stone-400">Sin geometría cargada para este proyecto.</p>
+          ) : (
+            <div className="h-[480px] overflow-hidden rounded-lg">
+              <ProjectMap
+                geojson={geojson}
+                microcuencas={microcuencasFc}
+                rivers={riversFc}
+                receptores={receptoresFc}
+                samplingStations={stationsFc}
+                areaEstudio={areaFeature}
+                areaEstudioStatus={area?.status ?? null}
+                areaEfectiva={areaEfectivaFeature}
+                vegetationZones={vegetationFc}
+                concesiones={concesionesFc}
+              />
+            </div>
+          )}
+          {layerError && (
+            <p className="mt-2 text-xs text-amber-700">Error cargando capas: {layerError}</p>
+          )}
+        </Card>
+      )}
 
       {/* Área de estudio panel */}
       <AreaEstudioPanel
@@ -398,26 +596,25 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       {/* Reportes panel */}
       <ReportesPanel projectId={id} projectName={p.nombre_proyecto} />
 
-      {/* Inventario by category — collapsed by default; native <details>
-          gives free keyboard support and no client-component overhead. */}
+      {/* Inventario by category */}
       <Card title={`Inventario de componentes (${inv.length} filas)`}>
         <div className="space-y-2">
           {Object.entries(grouped).length === 0 ? (
-            <p className="text-sm text-stone-500">Sin inventario.</p>
+            <p className="text-sm text-stone-400">Sin inventario.</p>
           ) : (
             Object.entries(grouped).map(([categoria, rows]) => {
               const totalQty = rows.reduce((sum, r) => sum + (r.cantidad ?? 0), 0);
               return (
                 <details
                   key={categoria}
-                  className="group rounded-md border border-stone-200 [&_summary::-webkit-details-marker]:hidden"
+                  className="group overflow-hidden rounded-lg border border-stone-200 [&_summary::-webkit-details-marker]:hidden"
                 >
-                  <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-stone-50">
-                    <span className="flex items-center gap-2">
+                  <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm transition-colors hover:bg-stone-50">
+                    <span className="flex items-center gap-2.5">
                       <svg
                         aria-hidden
                         viewBox="0 0 12 12"
-                        className="h-3 w-3 text-stone-400 transition-transform group-open:rotate-90"
+                        className="h-3 w-3 text-stone-400 transition-transform duration-150 group-open:rotate-90"
                       >
                         <path d="M4 2 L8 6 L4 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -425,41 +622,29 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                         {CATEGORY_LABELS[categoria] ?? categoria}
                       </span>
                     </span>
-                    <span className="flex items-center gap-3 text-xs text-stone-500 tabular-nums">
-                      <span>
-                        {rows.length} {rows.length === 1 ? "ítem" : "ítems"}
-                      </span>
+                    <span className="flex items-center gap-3 text-xs tabular-nums text-stone-400">
+                      <span>{rows.length} {rows.length === 1 ? "ítem" : "ítems"}</span>
                       <span className="hidden sm:inline">·</span>
-                      <span className="hidden sm:inline">
-                        {totalQty} unid.
-                      </span>
+                      <span className="hidden sm:inline">{totalQty} unid.</span>
                     </span>
                   </summary>
-                  <div className="overflow-hidden border-t border-stone-200">
-                    <table className="min-w-full divide-y divide-stone-200 text-sm">
-                      <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+                  <div className="border-t border-stone-100">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-400">
                         <tr>
-                          <th className="px-3 py-2 font-medium">Componente</th>
-                          <th className="px-3 py-2 text-right font-medium">
-                            Cantidad
-                          </th>
-                          <th className="px-3 py-2 font-medium">Atributos</th>
+                          <th className="px-4 py-2.5 font-medium">Componente</th>
+                          <th className="px-4 py-2.5 text-right font-medium">Cantidad</th>
+                          <th className="px-4 py-2.5 font-medium">Atributos</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-100">
                         {rows.map((r) => (
-                          <tr key={r.id}>
-                            <td className="px-3 py-2 font-mono text-xs">
-                              {r.componente}
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums">
-                              {r.cantidad}
-                            </td>
-                            <td className="px-3 py-2 text-stone-600">
+                          <tr key={r.id} className="transition-colors hover:bg-stone-50/50">
+                            <td className="px-4 py-2.5 font-mono text-xs text-stone-700">{r.componente}</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-stone-700">{r.cantidad}</td>
+                            <td className="px-4 py-2.5 text-stone-500">
                               {r.attrs && Object.keys(r.attrs).length > 0
-                                ? Object.entries(r.attrs)
-                                    .map(([k, v]) => `${k}: ${v}`)
-                                    .join("  ·  ")
+                                ? Object.entries(r.attrs).map(([k, v]) => `${k}: ${v}`).join("  ·  ")
                                 : "—"}
                             </td>
                           </tr>
@@ -474,63 +659,46 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         </div>
       </Card>
 
-      {/* Submissions */}
+      {/* RFI Submissions */}
       <Card title={`RFI submissions (${subs.length})`}>
         {subs.length === 0 ? (
-          <p className="text-sm text-stone-500">Sin envíos registrados.</p>
+          <p className="text-sm text-stone-400">Sin envíos registrados.</p>
         ) : (
-          <div className="overflow-hidden rounded-md border border-stone-200">
-            <table className="min-w-full divide-y divide-stone-200 text-sm">
-              <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+          <div className="overflow-hidden rounded-lg border border-stone-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-400">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Fecha</th>
-                  <th className="px-3 py-2 font-medium">Estado</th>
-                  <th className="px-3 py-2 text-right font-medium">
-                    Plataformas
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium">Área</th>
-                  <th className="px-3 py-2 font-medium">Warnings / Errors</th>
+                  <th className="px-4 py-3 font-medium">Fecha</th>
+                  <th className="px-4 py-3 font-medium">Estado</th>
+                  <th className="px-4 py-3 text-right font-medium">Plataformas</th>
+                  <th className="px-4 py-3 text-right font-medium">Área</th>
+                  <th className="px-4 py-3 font-medium">Warnings / Errors</th>
                 </tr>
               </thead>
-<tbody className="divide-y divide-stone-100">
+              <tbody className="divide-y divide-stone-100">
                 {subs.map((s) => {
                   const ok = s.schema_ok && s.components_ingested && (s.errors?.length ?? 0) === 0;
                   return (
-                    <tr key={s.id}>
-                      <td className="px-3 py-2 text-stone-600">
+                    <tr key={s.id} className="transition-colors hover:bg-stone-50/50">
+                      <td className="px-4 py-3 text-stone-500">
                         {new Date(s.submitted_at).toLocaleString("es-PE")}
                       </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                            ok
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-red-500"}`} />
                           {ok ? "GREEN" : "RED"}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {s.declared_platforms ?? "—"} /{" "}
-                        {s.actual_platforms ?? "—"}
+                      <td className="px-4 py-3 text-right tabular-nums text-stone-700">
+                        {s.declared_platforms ?? "—"} / {s.actual_platforms ?? "—"}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {s.declared_area_ha ?? "—"} ha decl ·{" "}
-                        {s.computed_area_ha ?? "—"} ha calc
+                      <td className="px-4 py-3 text-right tabular-nums text-stone-700">
+                        {s.declared_area_ha ?? "—"} ha decl · {s.computed_area_ha ?? "—"} ha calc
                       </td>
-                      <td className="px-3 py-2 text-stone-600">
-                        {(s.warnings?.length ?? 0) > 0
-                          ? `${s.warnings?.length} warnings`
-                          : ""}
-                        {(s.errors?.length ?? 0) > 0
-                          ? ` · ${s.errors?.length} errors`
-                          : ""}
-                        {(s.warnings?.length ?? 0) +
-                          (s.errors?.length ?? 0) ===
-                        0
-                          ? "Sin issues"
-                          : ""}
+                      <td className="px-4 py-3 text-stone-500">
+                        {(s.warnings?.length ?? 0) > 0 ? `${s.warnings?.length} warnings` : ""}
+                        {(s.errors?.length ?? 0) > 0 ? ` · ${s.errors?.length} errors` : ""}
+                        {(s.warnings?.length ?? 0) + (s.errors?.length ?? 0) === 0 ? "Sin issues" : ""}
                       </td>
                     </tr>
                   );
@@ -544,15 +712,321 @@ export default async function ProjectDetailPage({ params }: PageProps) {
   );
 }
 
-function Card({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+// ── Vegetation palette + aggregation ─────────────────────────────────────────
+
+const VEGE_COLORS: Record<string, string> = {
+  "10": "#1b5e20", "20": "#4caf50", "30": "#cddc39", "40": "#ff9800",
+  "80": "#0288d1", "90": "#8bc34a", "95": "#009688",
+  Pj: "#d4a017", Pjh: "#eab308",
+  "Br-al": "#166534", "Br-me": "#15803d", Bp: "#14532d", "Bp-A": "#22c55e",
+  "Bh-MBT": "#0f766e", "Bh-MBS": "#10b981", "Bh-T": "#059669",
+  "Bs-mo": "#a16207", "Bs-MA": "#b45309", "Bs-T": "#92400e",
+  Ma: "#84cc16", "Ma-DS": "#bef264", "Ma-T": "#4d7c0f",
+  Bof: "#2dd4bf", "L/Co": "#38bdf8", Pa: "#14b8a6",
+  Agri: "#f97316", Agro: "#fb923c", Cul: "#fdba74",
+  Pc: "#65a30d", ZU: "#dc2626",
+};
+
+function vegeColor(code: string | null): string {
+  return (code && VEGE_COLORS[code]) ?? "#a8a29e";
+}
+
+function aggregateVege(
+  vegetation: VegetationZone[],
+): { code: string | null; name: string; area: number }[] {
+  const byClass = new Map<string, { code: string | null; name: string; area: number }>();
+  for (const v of vegetation) {
+    const key = v.class_code ?? v.class_name;
+    const entry = byClass.get(key);
+    const area = v.area_ha ?? 0;
+    if (entry) entry.area += area;
+    else byClass.set(key, { code: v.class_code, name: v.class_name, area });
+  }
+  return [...byClass.values()].filter((v) => v.area > 0).sort((a, b) => b.area - a.area);
+}
+
+// ── VegetacionBar ─────────────────────────────────────────────────────────────
+
+function VegetacionBar({ vegetation }: { vegetation: VegetationZone[] }) {
+  const classes = aggregateVege(vegetation);
+  const total = classes.reduce((s, v) => s + v.area, 0);
+  if (!classes.length || total === 0) return null;
+
+  const fmt = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: 1 });
+
   return (
-    <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+    <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-stone-700">
+          Vegetación · WorldCover / MINAM
+        </h2>
+        <span className="text-xs text-stone-400">{fmt(total)} ha total</span>
+      </div>
+
+      {/* Stacked bar */}
+      <div
+        className="flex h-5 w-full overflow-hidden rounded-md"
+        role="img"
+        aria-label="Distribución de cobertura vegetal por clase"
+      >
+        {classes.map((v, i) => (
+          <div
+            key={i}
+            style={{ width: `${(v.area / total) * 100}%`, backgroundColor: vegeColor(v.code) }}
+            title={`${v.name}: ${fmt(v.area)} ha`}
+          />
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
+        {classes.slice(0, 12).map((v, i) => (
+          <div key={i} className="flex min-w-0 items-center gap-1.5">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: vegeColor(v.code) }}
+            />
+            <span className="min-w-0 truncate text-xs text-stone-600">{v.name}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-xs text-stone-400">
+              {((v.area / total) * 100).toFixed(0)}%
+            </span>
+          </div>
+        ))}
+        {classes.length > 12 && (
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-[2px] bg-stone-200" />
+            <span className="text-xs text-stone-400">+{classes.length - 12} más</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ── MapWithLeyenda ────────────────────────────────────────────────────────────
+
+function MapWithLeyenda({
+  geojson,
+  featuresError,
+  microcuencasFc,
+  riversFc,
+  receptoresFc,
+  stationsFc,
+  areaFeature,
+  area,
+  areaEfectivaFeature,
+  areaEfectiva,
+  vegetationFc,
+  concesionesFc,
+  vegetation,
+  layerError,
+}: {
+  geojson: GeoJSON.FeatureCollection;
+  featuresError: { message: string } | null;
+  microcuencasFc: GeoJSON.FeatureCollection;
+  riversFc: GeoJSON.FeatureCollection;
+  receptoresFc: GeoJSON.FeatureCollection;
+  stationsFc: GeoJSON.FeatureCollection;
+  areaFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  area: AreaEstudioRow | null;
+  areaEfectivaFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  areaEfectiva: AreaEfectivaRow | null;
+  vegetationFc: GeoJSON.FeatureCollection;
+  concesionesFc: GeoJSON.FeatureCollection;
+  vegetation: VegetationZone[];
+  layerError: string | null;
+}) {
+  const allVegeClasses = aggregateVege(vegetation);
+  const vegeClasses = allVegeClasses.slice(0, 6);
+  const areaStatusLabel =
+    area?.status === "approved"
+      ? "Aprobada"
+      : area?.status === "superseded"
+        ? "Reemplazada"
+        : "Borrador";
+
+  const fmt = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: 1 });
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
+        <h2 className="text-sm font-semibold text-stone-700">Mapa del proyecto</h2>
+        <span className="text-xs text-stone-400">
+          {geojson.features.length} componentes georreferenciados
+        </span>
+      </div>
+
+      {/* Body: map + leyenda */}
+      <div className="flex min-h-0">
+        {/* Map column */}
+        <div className="min-w-0 flex-1 p-4">
+          {featuresError ? (
+            <div className="flex h-[480px] items-center justify-center rounded-lg border border-red-200 bg-red-50">
+              <p className="text-sm text-red-600">{featuresError.message}</p>
+            </div>
+          ) : geojson.features.length === 0 ? (
+            <div className="flex h-[480px] items-center justify-center rounded-lg border border-stone-200 bg-stone-50">
+              <p className="text-sm text-stone-400">Sin geometría cargada para este proyecto.</p>
+            </div>
+          ) : (
+            <ProjectMap
+              geojson={geojson}
+              microcuencas={microcuencasFc}
+              rivers={riversFc}
+              receptores={receptoresFc}
+              samplingStations={stationsFc}
+              areaEstudio={areaFeature}
+              areaEstudioStatus={area?.status ?? null}
+              areaEfectiva={areaEfectivaFeature}
+              vegetationZones={vegetationFc}
+              concesiones={concesionesFc}
+            />
+          )}
+          {layerError && (
+            <p className="mt-2 text-xs text-amber-700">Error cargando capas: {layerError}</p>
+          )}
+        </div>
+
+        {/* Leyenda panel */}
+        <div className="w-[200px] shrink-0 overflow-y-auto border-l border-stone-100 p-4">
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+            Leyenda
+          </p>
+
+          {/* Áreas */}
+          {(area || areaEfectiva) && (
+            <div className="mb-4">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-stone-400">
+                Áreas
+              </p>
+              {area && (
+                <div className="mb-2 flex items-start gap-2">
+                  <span className="mt-0.5 h-3 w-3 shrink-0 rounded-[2px] border-2 border-emerald-500 bg-emerald-100" />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-stone-700">Área de estudio</p>
+                    <p className="text-[10px] text-stone-400">
+                      {fmt(area.area_ha)} ha · {areaStatusLabel}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {areaEfectiva && (
+                <div className="flex items-start gap-2">
+                  <span className="mt-0.5 h-3 w-3 shrink-0 rounded-[2px] border-2 border-dashed border-rose-500" />
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-stone-700">Área efectiva</p>
+                    <p className="text-[10px] text-stone-400">{fmt(areaEfectiva.area_ha)} ha</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Vegetación */}
+          {vegeClasses.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-stone-400">
+                Vegetación
+              </p>
+              <div className="space-y-1.5">
+                {vegeClasses.map((v, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                      style={{ backgroundColor: vegeColor(v.code) }}
+                    />
+                    <span className="min-w-0 truncate text-[11px] text-stone-600">{v.name}</span>
+                  </div>
+                ))}
+                {allVegeClasses.length > 6 && (
+                  <p className="text-[10px] text-stone-400">
+                    +{allVegeClasses.length - 6} clases más
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── AreaEfectivaCallout ───────────────────────────────────────────────────────
+
+function AreaEfectivaCallout({ areaEfectiva }: { areaEfectiva: AreaEfectivaRow }) {
+  return (
+    <section className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-5">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-600">
+          Área efectiva
+        </h2>
+        <span className="text-xs text-emerald-500/70">
+          Convex hull + {areaEfectiva.buffer_m} m buffer
+        </span>
+      </div>
+      <div className="mt-2 flex items-end gap-1.5">
+        <span className="font-serif text-[2.5rem] font-semibold leading-none tracking-tight text-emerald-800">
+          {areaEfectiva.area_ha.toLocaleString("es-PE", { maximumFractionDigits: 2 })}
+        </span>
+        <span className="mb-0.5 text-sm font-medium text-emerald-600">ha</span>
+      </div>
+      <p className="mt-2 text-xs text-emerald-700/60">
+        Footprint físico del proyecto · {areaEfectiva.components_count} componentes
+      </p>
+    </section>
+  );
+}
+
+// ── Empty tab placeholder ─────────────────────────────────────────────────────
+
+const TAB_LABELS: Partial<Record<TabId, string>> = {
+  mapa: "Vista cartográfica",
+  componentes: "Inventario de componentes",
+  areas: "Áreas de estudio e influencia",
+  linea_base: "Datos de línea base",
+  documentos: "Documentos del proyecto",
+};
+
+function EmptyTab({ tab }: { tab: TabId }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-stone-100">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-stone-300">
+          <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v11.5A2.25 2.25 0 004.25 18h11.5A2.25 2.25 0 0018 15.75V4.25A2.25 2.25 0 0015.75 2H4.25zM6 13.25V3.5h8v9.75a.75.75 0 01-1.064.678L9.5 12.2l-3.436 1.728A.75.75 0 016 13.25z" clipRule="evenodd" />
+        </svg>
+      </div>
+      <p className="text-sm font-medium text-stone-600">{TAB_LABELS[tab] ?? tab}</p>
+      <p className="mt-1 text-xs text-stone-400">Próximamente</p>
+    </div>
+  );
+}
+
+// ── Shared primitives ─────────────────────────────────────────────────────────
+
+function Chip({
+  children,
+  variant = "default",
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "emerald" | "amber";
+}) {
+  const styles = {
+    default: "bg-stone-100 text-stone-600",
+    emerald: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20",
+    amber: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[variant]}`}>
+      {children}
+    </span>
+  );
+}
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
       <h2 className="mb-4 text-sm font-semibold text-stone-700">{title}</h2>
       {children}
     </section>
@@ -561,11 +1035,11 @@ function Card({
 
 function DefList({ items }: { items: [string, string | number | null][] }) {
   return (
-    <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">
+    <dl className="grid grid-cols-[140px_1fr] gap-y-2.5 text-sm">
       {items.map(([k, v]) => (
         <div key={k} className="contents">
-          <dt className="text-stone-500">{k}</dt>
-          <dd className="text-stone-900">{v ?? "—"}</dd>
+          <dt className="text-stone-400">{k}</dt>
+          <dd className="font-medium text-stone-900">{v ?? "—"}</dd>
         </div>
       ))}
     </dl>

@@ -181,6 +181,22 @@ export interface SamplingStationRow {
   geom_geojson: string;
 }
 
+// ─── Concesiones mineras (INGEMMET Geocatmin) ─────────────────────────
+
+export interface ConcesionRow {
+  id: number;
+  codigo: string;
+  nombre: string;
+  titular: string | null;
+  area_ha: number | null;
+  estado: string | null;
+  tipo: string | null;
+  fecha_titulo: string | null;
+  is_own: boolean;
+  /** GeoJSON MultiPolygon as text. */
+  geom_geojson: string;
+}
+
 export interface AreaEstudioRow {
   id: string;
   status: AreaEstudioStatus;
