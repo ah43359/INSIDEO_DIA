@@ -9,7 +9,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import type { Paragraph } from "docx";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/supabase/with-auth";
 import { buildResumenEjecutivo } from "@/lib/dia/cap1/sections";
 import {
   buildAntecedentes,
@@ -42,17 +42,9 @@ interface RequestBody {
 
 export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const { id } = await params;
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json(
-      { error: "Unauthorized", detail: authError?.message },
-      { status: 401 },
-    );
-  }
+  const auth = await requireUser();
+  if (!auth.authenticated) return auth.response;
+  const { supabase, user } = auth.value;
 
   let body: RequestBody;
   try {

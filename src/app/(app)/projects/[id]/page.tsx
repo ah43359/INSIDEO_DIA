@@ -16,6 +16,7 @@ import {
 } from "@/lib/types";
 import AreaEstudioPanel from "@/components/AreaEstudioPanel";
 import ProjectMap from "@/components/ProjectMap";
+import ProjectMapWithEditor from "@/components/ProjectMapWithEditor";
 import ReportesPanel from "@/components/ReportesPanel";
 import SamplingResultsPanel from "@/components/SamplingResultsPanel";
 
@@ -574,6 +575,7 @@ function ResumenTab({
       {resumenV2 ? (
         <>
           <MapWithLeyenda
+            projectId={id}
             geojson={geojson}
             featuresError={featuresError}
             microcuencasFc={microcuencasFc}
@@ -866,6 +868,7 @@ function VegetacionBar({ vegetation }: { vegetation: VegetationZone[] }) {
 // ── MapWithLeyenda ────────────────────────────────────────────────────────────
 
 function MapWithLeyenda({
+  projectId,
   geojson,
   featuresError,
   microcuencasFc,
@@ -883,6 +886,7 @@ function MapWithLeyenda({
   vegetation,
   layerError,
 }: {
+  projectId: string;
   geojson: GeoJSON.FeatureCollection;
   featuresError: { message: string } | null;
   microcuencasFc: GeoJSON.FeatureCollection;
@@ -934,7 +938,9 @@ function MapWithLeyenda({
               <p className="text-sm text-stone-400">Sin geometría cargada para este proyecto.</p>
             </div>
           ) : (
-            <ProjectMap
+            <ProjectMapWithEditor
+              projectId={projectId}
+              areaEfectivaRow={areaEfectiva}
               geojson={geojson}
               microcuencas={microcuencasFc}
               rivers={riversFc}

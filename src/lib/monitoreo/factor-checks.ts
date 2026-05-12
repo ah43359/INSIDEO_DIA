@@ -74,6 +74,10 @@ export function getEcaDisplay(
       const p = SEDIMENTOS_PARAMS.find((x) => x.id === paramId);
       return p?.eca != null ? String(p.eca) : "–";
     }
+    case "flora":
+    case "fauna":
+    case "vida_acuatica":
+    case "rni":
     default:
       return "–";
   }
@@ -117,6 +121,10 @@ export function checkExceeds(
       const p = SEDIMENTOS_PARAMS.find((x) => x.id === paramId);
       return exceedsAir(raw, p?.eca ?? null);
     }
+    case "flora":
+    case "fauna":
+    case "vida_acuatica":
+    case "rni":
     default:
       return false;
   }
@@ -157,6 +165,10 @@ export function getActiveParams(factor: FactorKind): ParamMeta[] {
       return SEDIMENTOS_PARAMS.filter((p) => p.on).map((p) => ({
         id: p.id, name: p.name, unit: p.unit, on: p.on, period: p.period,
       }));
+    case "flora":
+    case "fauna":
+    case "vida_acuatica":
+    case "rni":
     default:
       return [];
   }

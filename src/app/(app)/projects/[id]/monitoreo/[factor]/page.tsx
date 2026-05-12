@@ -46,6 +46,10 @@ const VALID_FACTORS = new Set<FactorKind>([
   "suelos",
   "sedimentos",
   "vibraciones",
+  "flora",
+  "fauna",
+  "vida_acuatica",
+  "rni",
 ]);
 
 interface StationRow {
@@ -60,6 +64,7 @@ interface StationRow {
   coord_norte: number | null;
   altitud_m: number | null;
   campaign: string | null;
+  custom_name?: string | null;
 }
 
 interface MeasurementRow {
@@ -113,6 +118,8 @@ export default function MonitoreoFactorPage() {
   const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [docxLoading, setDocxLoading] = useState(false);
+  const [stationSaving, setStationSaving] = useState<Record<string, boolean>>({});
+  const [stationSaveError, setStationSaveError] = useState<Record<string, string | null>>({});
 
   const [step, setStep] = useState(0);
   const [showImport, setShowImport] = useState(false);
@@ -155,6 +162,30 @@ export default function MonitoreoFactorPage() {
     if (stationRes.data) setStations(stationRes.data as StationRow[]);
     if (measRes.data) setMeasurements(measRes.data as MeasurementRow[]);
     setLoading(false);
+  }
+
+  async function saveStationPatch(stationId: string, patch: Record<string, unknown>) {
+    setStationSaving((m) => ({ ...m, [stationId]: true }));
+    setStationSaveError((m) => ({ ...m, [stationId]: null }));
+    try {
+      const res = await fetch(`/api/projects/${projectId}/stations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ station_id: stationId, ...patch }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      await loadData();
+    } catch (e) {
+      setStationSaveError((m) => ({
+        ...m,
+        [stationId]: e instanceof Error ? e.message : String(e),
+      }));
+    } finally {
+      setStationSaving((m) => ({ ...m, [stationId]: false }));
+    }
   }
 
   // ── Derived data ──────────────────────────────────────────────────────────
@@ -591,7 +622,15 @@ export default function MonitoreoFactorPage() {
                     secondary="Ve a la pestaña de estaciones del proyecto para crear estaciones de monitoreo."
                   />
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-stone-200">
+                  <div className="space-y-3">
+                    <p className="text-sm text-stone-500">
+                      Podés editar coordenadas aquí. Se guardan en{" "}
+                      <code className="rounded bg-stone-100 px-1 py-0.5 font-mono text-xs">
+                        project_sampling_stations
+                      </code>{" "}
+                      y sirven como base para el Capítulo 3 (Línea Base) del DIA.
+                    </p>
+                    <div className="overflow-x-auto rounded-lg border border-stone-200">
                     <table className="w-full text-sm border-collapse">
                       <thead>
                         <tr className="bg-stone-900">
@@ -602,25 +641,120 @@ export default function MonitoreoFactorPage() {
                           <th className="px-3 py-2 text-right text-xs font-semibold text-white">Este</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-white">Norte</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold text-white">Altitud (m)</th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-white">Acción</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {factorStationsWithDate.map((s, i) => (
-                          <tr key={s.code} className={i % 2 === 0 ? "bg-white" : "bg-stone-50"}>
-                            <td className="px-3 py-2 font-medium text-stone-800 border-t border-stone-100">{s.code}</td>
-                            <td className="px-3 py-2 text-stone-600 border-t border-stone-100">{s.desc || "–"}</td>
-                            <td className="px-3 py-2 text-stone-600 border-t border-stone-100">{s.datum || "WGS84"}</td>
-                            <td className="px-3 py-2 text-stone-600 border-t border-stone-100">{s.zona || "–"}</td>
-                            <td className="px-3 py-2 text-right text-stone-600 border-t border-stone-100 tabular-nums">{s.este ?? "–"}</td>
-                            <td className="px-3 py-2 text-right text-stone-600 border-t border-stone-100 tabular-nums">{s.norte ?? "–"}</td>
-                            <td className="px-3 py-2 text-right text-stone-600 border-t border-stone-100 tabular-nums">{s.alt ?? "–"}</td>
-                          </tr>
-                        ))}
+                        {factorStationsWithDate.map((s, i) => {
+                          const row = stations.find((x) => x.id === s.id);
+                          if (!row) return null;
+                          const busy = !!stationSaving[row.id];
+                          const err = stationSaveError[row.id];
+                          return (
+                            <tr key={s.id} className={i % 2 === 0 ? "bg-white" : "bg-stone-50"}>
+                              <td className="px-3 py-2 font-medium text-stone-800 border-t border-stone-100 whitespace-nowrap">
+                                {s.code}
+                              </td>
+                              <td className="px-3 py-2 text-stone-600 border-t border-stone-100 min-w-[220px]">
+                                <input
+                                  defaultValue={row.target_receptor_nombre ?? ""}
+                                  placeholder="(opcional)"
+                                  className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs"
+                                  data-field="target_receptor_nombre"
+                                  data-station={row.id}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-stone-600 border-t border-stone-100 min-w-[140px]">
+                                <input
+                                  defaultValue={row.datum ?? "WGS84"}
+                                  className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs"
+                                  data-field="datum"
+                                  data-station={row.id}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-stone-600 border-t border-stone-100 min-w-[110px]">
+                                <input
+                                  defaultValue={row.utm_zone ?? ""}
+                                  placeholder="Ej: 19S"
+                                  className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs"
+                                  data-field="utm_zone"
+                                  data-station={row.id}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right text-stone-600 border-t border-stone-100 tabular-nums min-w-[120px]">
+                                <input
+                                  defaultValue={row.coord_este ?? ""}
+                                  inputMode="decimal"
+                                  placeholder="—"
+                                  className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs text-right tabular-nums"
+                                  data-field="coord_este"
+                                  data-station={row.id}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right text-stone-600 border-t border-stone-100 tabular-nums min-w-[120px]">
+                                <input
+                                  defaultValue={row.coord_norte ?? ""}
+                                  inputMode="decimal"
+                                  placeholder="—"
+                                  className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs text-right tabular-nums"
+                                  data-field="coord_norte"
+                                  data-station={row.id}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right text-stone-600 border-t border-stone-100 tabular-nums min-w-[120px]">
+                                <input
+                                  defaultValue={row.altitud_m ?? ""}
+                                  inputMode="decimal"
+                                  placeholder="—"
+                                  className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs text-right tabular-nums"
+                                  data-field="altitud_m"
+                                  data-station={row.id}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right border-t border-stone-100 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    const q = (field: string) =>
+                                      document.querySelector<HTMLInputElement>(
+                                        `input[data-station=\"${row.id}\"][data-field=\"${field}\"]`,
+                                      );
+                                    const get = (field: string) => q(field)?.value ?? "";
+                                    const numOrNull = (s: string) => {
+                                      const t = s.trim();
+                                      if (!t) return null;
+                                      const n = Number(t.replace(",", "."));
+                                      return Number.isFinite(n) ? n : null;
+                                    };
+                                    void saveStationPatch(row.id, {
+                                      target_receptor_nombre: get("target_receptor_nombre").trim() || null,
+                                      datum: get("datum").trim() || null,
+                                      utm_zone: get("utm_zone").trim() || null,
+                                      coord_este: numOrNull(get("coord_este")),
+                                      coord_norte: numOrNull(get("coord_norte")),
+                                      altitud_m: numOrNull(get("altitud_m")),
+                                    });
+                                  }}
+                                  className="rounded-md bg-stone-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-800 disabled:opacity-50"
+                                >
+                                  {busy ? "Guardando…" : "Guardar"}
+                                </button>
+                                {err ? (
+                                  <div className="mt-1 text-[10px] text-red-700 text-left max-w-[220px] whitespace-normal">
+                                    {err}
+                                  </div>
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                     <div className="px-3 py-2 bg-stone-50 border-t border-stone-200 text-xs text-stone-500">
                       {factorStationsWithDate.length} estación(es)
                     </div>
+                  </div>
                   </div>
                 )}
               </div>

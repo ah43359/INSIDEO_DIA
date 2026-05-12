@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python scripts/search.py \"environmental compliance GIS mining regulatory document management professional dark editorial\" --design-system -p \"INSIDEO DIA\" -f markdown)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
     ]
   }
 }

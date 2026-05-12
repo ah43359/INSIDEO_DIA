@@ -6,6 +6,7 @@ import {
   type ActionResult,
   type DeriveOptions,
   type DeriveStrategy,
+  cancelDerivationJob,
   enqueueDeriveAreaEstudio,
   enqueueProposeStations,
   enqueueProposeSoilStations,
@@ -27,9 +28,9 @@ interface AreaEstudioActionsProps {
 
 const DEFAULT_OPTIONS: Required<DeriveOptions> = {
   strategy: "subbasin_envelope",
-  targetAreaHa: 2000,
-  streamThresholdCells: 500,
-  maxHops: 4,
+  targetAreaHa: 800,
+  streamThresholdCells: 100,
+  maxHops: 6,
   drainage: "local_dem",
   receptorBufferM: 1000,
   maxMicrocuencaAreaKm2: 2500,
@@ -39,12 +40,23 @@ const DEFAULT_OPTIONS: Required<DeriveOptions> = {
 type JobStatus = "pending" | "running" | "completed" | "failed";
 const POLL_INTERVAL_MS = 2_000;
 const STUCK_AFTER_MS = 20_000;
+const HEALTH_POLL_MS = 10_000;
+const HEALTH_DEGRADED_AFTER_MS = 45_000;
+const HEALTH_OFFLINE_AFTER_MS = 180_000;
 
 interface JobView {
   id: string;
   status: JobStatus;
   error: string | null;
   result: Record<string, unknown> | null;
+}
+
+type WorkerHealthState = "healthy" | "degraded" | "offline" | "unknown";
+
+interface JobHealthRow {
+  id: string;
+  status: JobStatus;
+  created_at: string | null;
 }
 
 export default function AreaEstudioActions({
@@ -124,9 +136,12 @@ export default function AreaEstudioActions({
 
   return (
     <div className="space-y-4 rounded-md border border-stone-200 bg-stone-50 p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-        Generar o cargar
-      </h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+          Generar o cargar
+        </h3>
+        <WorkerHealthIndicator />
+      </div>
 
       {/* Generate */}
       <div className="space-y-2">
@@ -134,11 +149,29 @@ export default function AreaEstudioActions({
           <button
             type="button"
             onClick={runDerive}
-            disabled={pending || !hasComponents || activeJobId !== null}
+            disabled={pending || !hasComponents}
             className="inline-flex items-center rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {pending ? "Encolando…" : "Delimitar Microcuencas"}
           </button>
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-stone-500 whitespace-nowrap">
+              Área objetivo:
+            </label>
+            <input
+              type="number"
+              min={50}
+              max={50000}
+              step={50}
+              value={opts.targetAreaHa}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v > 0) setOpts((o) => ({ ...o, targetAreaHa: v }));
+              }}
+              className="w-20 rounded border border-stone-300 bg-white px-2 py-1 text-xs"
+            />
+            <span className="text-xs text-stone-500">ha</span>
+          </div>
           <button
             type="button"
             onClick={() => setShowHowItWorks((s) => !s)}
@@ -292,7 +325,7 @@ export default function AreaEstudioActions({
           <button
             type="button"
             onClick={runProposeStations}
-            disabled={pending || !hasAreaEstudio || activeJobId !== null}
+            disabled={pending || !hasAreaEstudio}
             className="inline-flex items-center rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 shadow-sm hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {pending ? "Encolando…" : "Proponer estaciones de muestreo"}
@@ -315,7 +348,7 @@ export default function AreaEstudioActions({
           <button
             type="button"
             onClick={runVegetation}
-            disabled={pending || !hasAreaEstudio || activeJobId !== null}
+            disabled={pending || !hasAreaEstudio}
             className="inline-flex items-center rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 shadow-sm hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {pending ? "Encolando…" : "Calcular vegetación"}
@@ -338,7 +371,7 @@ export default function AreaEstudioActions({
           <button
             type="button"
             onClick={runSoilStations}
-            disabled={pending || !hasAreaEstudio || activeJobId !== null}
+            disabled={pending || !hasAreaEstudio}
             className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {pending ? "Encolando…" : "Agregar estaciones de suelos"}
@@ -382,7 +415,7 @@ export default function AreaEstudioActions({
           />
           <button
             type="submit"
-            disabled={pending || activeJobId !== null}
+            disabled={pending}
             className="inline-flex items-center rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-900 shadow-sm hover:bg-stone-100 disabled:opacity-50"
           >
             {pending ? "Subiendo…" : "Cargar archivo"}
@@ -408,6 +441,16 @@ export default function AreaEstudioActions({
             router.refresh();
           }}
           onDismiss={() => setActiveJobId(null)}
+          onUnlock={async () => {
+            const id = activeJobId;
+            setActiveJobId(null);
+            if (id) {
+              const res = await cancelDerivationJob(id);
+              if (!res.ok) {
+                setEnqueueError(res.message ?? "No se pudo cancelar el trabajo.");
+              }
+            }
+          }}
         />
       )}
     </div>
@@ -420,10 +463,12 @@ function JobStatusWatcher({
   jobId,
   onDone,
   onDismiss,
+  onUnlock,
 }: {
   jobId: string;
   onDone: () => void;
   onDismiss: () => void;
+  onUnlock: () => void;
 }) {
   const [job, setJob] = useState<JobView | null>(null);
   const [stuck, setStuck] = useState(false);
@@ -517,13 +562,128 @@ function JobStatusWatcher({
         <span className="font-mono text-[10px] text-amber-700">{jobId.slice(0, 8)}</span>
       </div>
       {stuck && job.status === "pending" && (
-        <p className="text-[11px] text-amber-800">
-          Esperando que el worker procese. Si no tenés uno corriendo, ejecutá:
-          <code className="mt-1 block rounded bg-stone-900 px-2 py-1 font-mono text-[10px] text-stone-100">
+        <div className="space-y-2 text-[11px] text-amber-800">
+          <p>
+            Esperando que el worker procese. Si no tenés uno corriendo, ejecutá:
+          </p>
+          <code className="block rounded bg-stone-900 px-2 py-1 font-mono text-[10px] text-stone-100">
             python skills/reference-layers/scripts/worker.py
           </code>
-        </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onUnlock}
+              className="rounded border border-amber-300 bg-white px-2 py-1 text-[10px] font-medium text-amber-900 hover:bg-amber-100"
+            >
+              Cancelar y reintentar
+            </button>
+            <span className="text-[10px] text-amber-700">
+              Marca este job como fallido y libera la cola.
+            </span>
+          </div>
+        </div>
       )}
+    </div>
+  );
+}
+
+function WorkerHealthIndicator() {
+  const [status, setStatus] = useState<WorkerHealthState>("unknown");
+  const [note, setNote] = useState<string>("Sin datos recientes.");
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+
+    function parseDateMs(input: string | null): number | null {
+      if (!input) return null;
+      const ms = new Date(input).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    async function pollHealth() {
+      const { data, error } = await supabase
+        .from("derivation_jobs")
+        .select("id, status, created_at")
+        .order("created_at", { ascending: false })
+        .limit(30);
+
+      if (cancelled) return;
+      if (error) {
+        setStatus("unknown");
+        setNote("No se pudo leer cola.");
+        return;
+      }
+
+      const rows = (data ?? []) as JobHealthRow[];
+      if (rows.length === 0) {
+        setStatus("unknown");
+        setNote("Sin trabajos en cola.");
+        return;
+      }
+
+      const now = Date.now();
+      const runningCount = rows.filter((r) => r.status === "running").length;
+      const pendingAges = rows
+        .filter((r) => r.status === "pending")
+        .map((r) => parseDateMs(r.created_at))
+        .filter((ms): ms is number => ms !== null)
+        .map((createdMs) => now - createdMs);
+      const oldestPendingMs = pendingAges.length > 0 ? Math.max(...pendingAges) : null;
+
+      if (runningCount > 0) {
+        setStatus("healthy");
+        setNote(`Worker activo (${runningCount} procesando).`);
+        return;
+      }
+
+      if (oldestPendingMs === null) {
+        setStatus("healthy");
+        setNote("Sin pendientes atascados.");
+        return;
+      }
+
+      if (oldestPendingMs > HEALTH_OFFLINE_AFTER_MS) {
+        setStatus("offline");
+        setNote("Pendientes antiguos; worker probablemente caído.");
+      } else if (oldestPendingMs > HEALTH_DEGRADED_AFTER_MS) {
+        setStatus("degraded");
+        setNote("Cola lenta; worker con retraso.");
+      } else {
+        setStatus("healthy");
+        setNote("Cola reciente en espera normal.");
+      }
+    }
+
+    pollHealth();
+    const timer = setInterval(pollHealth, HEALTH_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const tone =
+    status === "healthy"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : status === "degraded"
+        ? "border-amber-200 bg-amber-50 text-amber-900"
+        : status === "offline"
+          ? "border-red-200 bg-red-50 text-red-900"
+          : "border-stone-200 bg-white text-stone-600";
+  const label =
+    status === "healthy"
+      ? "Worker OK"
+      : status === "degraded"
+        ? "Worker lento"
+        : status === "offline"
+          ? "Worker caído"
+          : "Worker ?";
+
+  return (
+    <div className={`rounded border px-2 py-1 text-[10px] ${tone}`}>
+      <div className="font-semibold">{label}</div>
+      <div>{note}</div>
     </div>
   );
 }

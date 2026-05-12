@@ -205,7 +205,18 @@ export const SEDIMENTOS_PARAMS: SedimentParam[] = [
 
 // ─── All factors map ─────────────────────────────────────────────────────────
 
-export type FactorKind = "aire" | "agua_superficial" | "agua_subterranea" | "ruido" | "suelos" | "sedimentos" | "vibraciones";
+export type FactorKind =
+  | "aire"
+  | "agua_superficial"
+  | "agua_subterranea"
+  | "ruido"
+  | "vibraciones"
+  | "suelos"
+  | "sedimentos"
+  | "flora"
+  | "fauna"
+  | "vida_acuatica"
+  | "rni";
 
 export interface FactorDef {
   id: FactorKind;
@@ -220,9 +231,13 @@ export const FACTOR_DEFS: FactorDef[] = [
   { id: "agua_superficial",    label: "Agua Superficial",    section: "3.3.9",    sectionTitle: "CALIDAD DEL AGUA SUPERFICIAL",         decree: "D.S. N° 004-2017-MINAM" },
   { id: "agua_subterranea",    label: "Agua Subterránea",   section: "3.3.10",   sectionTitle: "CALIDAD DEL AGUA SUBTERRÁNEA",         decree: "D.S. N° 004-2017-MINAM" },
   { id: "ruido",               label: "Ruido",               section: "3.3.7",    sectionTitle: "NIVELES DE RUIDO AMBIENTAL",           decree: "D.S. N° 085-2003-PCM" },
-  { id: "suelos",              label: "Suelos",              section: "3.3.5.6",  sectionTitle: "ANÁLISIS DE CALIDAD DE SUELO",         decree: "D.S. N° 011-2017-MINAM" },
+  { id: "suelos",              label: "Calidad de Suelos",    section: "3.3.5.6",  sectionTitle: "ANÁLISIS DE CALIDAD DE SUELO",         decree: "D.S. N° 011-2017-MINAM" },
   { id: "sedimentos",          label: "Sedimentos",          section: "3.3.5.7",  sectionTitle: "CALIDAD DE SEDIMENTOS",               decree: "D.S. N° 011-2017-MINAM (ref.)" },
   { id: "vibraciones",         label: "Vibraciones",         section: "3.3.8",    sectionTitle: "VIBRACIONES",                          decree: "NTP 27006 / ISO 4866" },
+  { id: "flora",               label: "Flora",               section: "3.3.1",    sectionTitle: "FLORA",                                 decree: "Guías MINAM / D.S. 043-2006-AG (cat.)" },
+  { id: "fauna",               label: "Fauna",               section: "3.3.2",    sectionTitle: "FAUNA",                                 decree: "Guías MINAM / D.S. 043-2006-AG (cat.)" },
+  { id: "vida_acuatica",       label: "Vida Acuática",       section: "3.2.9",    sectionTitle: "VIDA ACUÁTICA",                         decree: "Según diseño de LB (macroinvertebrados, perifiton, etc.)" },
+  { id: "rni",                 label: "RNI",                 section: "3.2.2",    sectionTitle: "RADIACIÓN NO IONIZANTE (RNI)",          decree: "Según instrumento / guía aplicable" },
 ];
 
 export const FACTOR_DEFS_MAP: Record<FactorKind, FactorDef> =
@@ -250,7 +265,11 @@ export const FACTOR_STYLES: Record<FactorKind, FactorStyle> = {
   agua_superficial:  { bg: "#E0F2FE", text: "#075985", accent: "#0EA5E9", badge: "bg-sky-100 text-sky-800 border-sky-200",         border: "border-t-sky-500",    icon: "💧" },
   agua_subterranea:  { bg: "#EFF6FF", text: "#1E40AF", accent: "#60A5FA", badge: "bg-indigo-100 text-indigo-800 border-indigo-200", border: "border-t-indigo-500", icon: "🪨" },
   ruido:             { bg: "#FEF9C3", text: "#854D0E", accent: "#EAB308", badge: "bg-amber-100 text-amber-800 border-amber-200",   border: "border-t-amber-500",  icon: "🔊" },
-  suelos:            { bg: "#FEF3C7", text: "#92400E", accent: "#F59E0B", badge: "bg-orange-100 text-orange-800 border-orange-200", border: "border-t-orange-500", icon: "🌱" },
+  suelos:            { bg: "#FEF3C7", text: "#92400E", accent: "#F59E0B", badge: "bg-orange-100 text-orange-800 border-orange-200", border: "border-t-orange-500", icon: "🧪" },
   sedimentos:        { bg: "#FDF4FF", text: "#7E22CE", accent: "#A855F7", badge: "bg-purple-100 text-purple-800 border-purple-200", border: "border-t-purple-500", icon: "🏖️" },
   vibraciones:       { bg: "#F3F4F6", text: "#374151", accent: "#9CA3AF", badge: "bg-stone-100 text-stone-700 border-stone-300",   border: "border-t-stone-400",  icon: "📳" },
+  flora:             { bg: "#DCFCE7", text: "#166534", accent: "#22C55E", badge: "bg-emerald-100 text-emerald-800 border-emerald-200", border: "border-t-emerald-500", icon: "🌿" },
+  fauna:             { bg: "#ECFCCB", text: "#365314", accent: "#84CC16", badge: "bg-lime-100 text-lime-800 border-lime-200", border: "border-t-lime-500", icon: "🦊" },
+  vida_acuatica:     { bg: "#E0F2FE", text: "#075985", accent: "#0284C7", badge: "bg-cyan-100 text-cyan-800 border-cyan-200", border: "border-t-cyan-500", icon: "🐟" },
+  rni:               { bg: "#FFE4E6", text: "#9F1239", accent: "#FB7185", badge: "bg-rose-100 text-rose-800 border-rose-200", border: "border-t-rose-500", icon: "📡" },
 };

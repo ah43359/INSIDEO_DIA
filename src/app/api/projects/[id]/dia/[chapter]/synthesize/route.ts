@@ -18,7 +18,7 @@
 // state.content[sectionId].
 
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/supabase/with-auth";
 import { findChapter, isValidChapterId } from "@/lib/dia/chapters";
 import {
   synthesizeSections,
@@ -52,17 +52,9 @@ export async function POST(
   const entry = findChapter(chapterNum);
   if (!entry) return NextResponse.json({ error: "Capítulo no encontrado" }, { status: 404 });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json(
-      { error: "Unauthorized", detail: authError?.message },
-      { status: 401 },
-    );
-  }
+  const auth = await requireUser();
+  if (!auth.authenticated) return auth.response;
+  const { supabase } = auth.value;
 
   let body: RequestBody;
   try {

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/supabase/with-auth";
 import { buildPdtDocument, type PdtData } from "@/lib/pdt/document";
 import type { PdtStation } from "@/lib/pdt/helpers";
 
@@ -25,13 +25,9 @@ export async function POST(
 ): Promise<NextResponse> {
   const { id } = await params;
 
-  const supabase = await createClient();
-
-  // Verify session
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized", detail: authError?.message }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (!auth.authenticated) return auth.response;
+  const { supabase } = auth.value;
 
   // Parse optional body (map screenshot)
   let mapImageDataUrl: string | null = null;
@@ -56,7 +52,6 @@ export async function POST(
         detail: projectError?.message,
         code: projectError?.code,
         queried_id: id,
-        user_id: user.id,
       },
       { status: 404 },
     );

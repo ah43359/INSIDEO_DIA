@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/supabase/with-auth";
 import { buildCap1Document } from "@/lib/dia/cap1/document";
 import { buildCap2Document } from "@/lib/dia/cap2/document";
 import { buildCap3Document } from "@/lib/dia/cap3/document";
@@ -29,17 +29,9 @@ export async function POST(
     return NextResponse.json({ error: "Capítulo no disponible" }, { status: 404 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json(
-      { error: "Unauthorized", detail: authError?.message },
-      { status: 401 },
-    );
-  }
+  const auth = await requireUser();
+  if (!auth.authenticated) return auth.response;
+  const { supabase } = auth.value;
 
   let body: unknown;
   try {

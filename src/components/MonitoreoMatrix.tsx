@@ -342,6 +342,11 @@ function getParamsForFactor(factor: FactorKind): Param[] {
         id: p.id, name: p.name, unit: p.unit, eca: p.eca != null ? String(p.eca) : "–",
         period: p.period, on: p.on,
       }));
+    case "flora":
+    case "fauna":
+    case "vida_acuatica":
+    case "rni":
+      return [];
     default:
       return [];
   }

@@ -15,7 +15,24 @@ import "maplibre-gl/dist/maplibre-gl.css";
 type BasemapKey = "default" | "topo" | "satellite";
 
 const BASEMAPS: Record<BasemapKey, string | StyleSpecification> = {
-  default: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+  default: {
+    version: 8,
+    sources: {
+      "esri-topo": {
+        type: "raster",
+        tiles: [
+          "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        attribution:
+          "Tiles © Esri — Esri, DeLorme, NAVTEQ, TomTom, Intermap, USGS, FAO, NPS, NRCAN, GeoBase, IGN, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community",
+      },
+    },
+    layers: [
+      { id: "esri-topo-layer", type: "raster", source: "esri-topo" },
+    ],
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  },
   topo: {
     version: 8,
     sources: {
@@ -120,6 +137,14 @@ interface ProjectMapProps {
   contours?: GeoJSON.FeatureCollection | null;
   /** Peru country outline (low-zoom reference). Optional. */
   peruBoundary?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  /** Active when the user is editing área efectiva vertices on the map. */
+  editingAreaEfectiva?: boolean;
+  /** Fires whenever the edited polygon changes (drag/insert/delete). */
+  onAreaEfectivaGeomChange?: (
+    geom: GeoJSON.Polygon | GeoJSON.MultiPolygon | null,
+  ) => void;
+  /** Bump to force the editor to reset to the persisted polygon. */
+  areaEfectivaEditorResetKey?: number;
 }
 
 // Color & ranking for sampling-station kinds (kept top-level so the
@@ -241,10 +266,15 @@ export default function ProjectMap({
   concesiones,
   contours,
   peruBoundary,
+  editingAreaEfectiva = false,
+  onAreaEfectivaGeomChange,
+  areaEfectivaEditorResetKey = 0,
 }: ProjectMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MlMap | null>(null);
   const [basemap, setBasemap] = useState<BasemapKey>("default");
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   // Layer-group visibility (true = visible). Default everything on.
   const [groupVisible, setGroupVisible] = useState<Record<LayerGroup, boolean>>({
@@ -271,7 +301,7 @@ export default function ProjectMap({
   // Vegetation classes: each class togglable independently.
   const [vegClassVisible, setVegClassVisible] = useState<Record<string, boolean>>({});
 
-  // Client-side loaded boundaries from GitHub
+  // Client-side loaded boundaries from public/data/
   const [boundaryData, setBoundaryData] = useState<{
     departamentos: GeoJSON.FeatureCollection | null;
     provincias: GeoJSON.FeatureCollection | null;
@@ -283,9 +313,9 @@ export default function ProjectMap({
   });
 
   const BOUNDARY_URLS = {
-    departamentos: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
-    provincias: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_provincial_simple.geojson",
-    distritos: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_distrital_simple.geojson",
+    departamentos: "/data/inei_departamentos_2023.geojson",
+    provincias: "/data/inei_provincias_2023.geojson",
+    distritos: "/data/inei_distritos_2023.geojson",
   };
 
   useEffect(() => {
@@ -297,25 +327,19 @@ export default function ProjectMap({
           fetch(BOUNDARY_URLS.distritos),
         ]);
         
-        // Log fetch status for debugging
-        console.log('Boundary fetch status:', {
-          dept: deptRes.status,
-          prov: provRes.status,
-          dist: distRes.status,
-        });
-        
         const [dept, prov, dist] = await Promise.all([
           deptRes.ok ? deptRes.json() : null,
           provRes.ok ? provRes.json() : null,
           distRes.ok ? distRes.json() : null,
         ]);
         
-        // Log loaded data shape
-        console.log('Boundary data loaded:', {
-          dept: dept?.features?.length,
-          prov: prov?.features?.length,
-          dist: dist?.features?.length,
-        });
+        if (!dept || !prov || !dist) {
+          console.warn('Boundary data incomplete — one or more files failed to load', {
+            dept: dept?.features?.length,
+            prov: prov?.features?.length,
+            dist: dist?.features?.length,
+          });
+        }
         
         setBoundaryData({
           departamentos: dept,
@@ -348,18 +372,47 @@ export default function ProjectMap({
       mapRef.current = null;
     }
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: BASEMAPS[basemap],
-      center: [-75, -10],
-      zoom: 5,
-      attributionControl: { compact: true },
-      canvasContextAttributes: { preserveDrawingBuffer: true },
-    });
+    setMapError(null);
+    setMapLoaded(false);
+
+    // Hard gate: MapLibre GL v5 requires WebGL2.
+    {
+      const probe = document.createElement("canvas");
+      if (!probe.getContext("webgl2")) {
+        setMapError("Tu navegador no soporta WebGL2, necesario para el mapa.");
+        return;
+      }
+    }
+
+    let map: MlMap;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: BASEMAPS[basemap],
+        center: [-75, -10],
+        zoom: 5,
+        attributionControl: { compact: true },
+        // Note: preserveDrawingBuffer omitted — causes silent WebGL2
+        // context loss on some GPU drivers.
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMapError(msg);
+      return;
+    }
+
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
+    map.on("error", (e) => {
+      console.error("[ProjectMap] error:", e.error);
+      setMapError(e.error?.message ?? "Error al cargar el mapa");
+    });
+
+    // "load" fires after the first visual render (requires working WebGL2).
+    // If it never fires the overlay stays — open DevTools console for clues.
     map.on("load", () => {
+      setMapLoaded(true);
       // Layer order (bottom → top): microcuencas, área de estudio,
       // rivers, components. Rivers sit *above* the área de estudio fill
       // so they remain visible inside the polygon.
@@ -1225,7 +1278,7 @@ export default function ProjectMap({
 
     mapRef.current = map;
     return () => {
-      map.remove();
+      mapRef.current?.remove();
       mapRef.current = null;
     };
     // Re-runs only on basemap change; data updates flow through the
@@ -1466,11 +1519,336 @@ export default function ProjectMap({
       ? "Reemplazada"
       : "Borrador";
 
+  // ─── Área efectiva vertex editor ────────────────────────────────────
+  // Self-contained: when `editingAreaEfectiva` is true, draws draggable
+  // vertex handles + clickable midpoint handles on top of the persisted
+  // área-efectiva polygon. All sources/layers/listeners are removed when
+  // the editor turns off or the component unmounts.
+  useEffect(() => {
+    const map: MlMap | null = mapRef.current;
+    if (!map || !mapLoaded) return;
+    if (!editingAreaEfectiva || !areaEfectiva) return;
+    const seed = areaEfectiva.geometry as
+      | GeoJSON.Polygon
+      | GeoJSON.MultiPolygon;
+    if (seed.type !== "Polygon" && seed.type !== "MultiPolygon") return;
+    // After the guard, capture a non-null reference for closures below.
+    const m: MlMap = map;
+
+    // Deep clone so prop never mutates.
+    let working: GeoJSON.Polygon | GeoJSON.MultiPolygon = JSON.parse(
+      JSON.stringify(seed),
+    );
+    onAreaEfectivaGeomChange?.(working);
+
+    type RingPath = { polyIdx: number; ringIdx: number };
+    type Ring = { path: RingPath; coords: GeoJSON.Position[] };
+
+    function getRings(): Ring[] {
+      if (working.type === "Polygon") {
+        return working.coordinates.map((coords, ringIdx) => ({
+          path: { polyIdx: 0, ringIdx },
+          coords,
+        }));
+      }
+      const out: Ring[] = [];
+      working.coordinates.forEach((poly, polyIdx) => {
+        poly.forEach((coords, ringIdx) => {
+          out.push({ path: { polyIdx, ringIdx }, coords });
+        });
+      });
+      return out;
+    }
+
+    function setRing(path: RingPath, ring: GeoJSON.Position[]): void {
+      if (working.type === "Polygon") {
+        working.coordinates[path.ringIdx] = ring;
+      } else {
+        working.coordinates[path.polyIdx][path.ringIdx] = ring;
+      }
+    }
+
+    function vertexFC(): GeoJSON.FeatureCollection<GeoJSON.Point> {
+      const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+      for (const r of getRings()) {
+        // Skip the closing vertex (same as the first) so we don't render it twice.
+        for (let i = 0; i < r.coords.length - 1; i++) {
+          features.push({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: r.coords[i] },
+            properties: {
+              polyIdx: r.path.polyIdx,
+              ringIdx: r.path.ringIdx,
+              vertexIdx: i,
+            },
+          });
+        }
+      }
+      return { type: "FeatureCollection", features };
+    }
+
+    function midpointFC(): GeoJSON.FeatureCollection<GeoJSON.Point> {
+      const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+      for (const r of getRings()) {
+        for (let i = 0; i < r.coords.length - 1; i++) {
+          const [x1, y1] = r.coords[i];
+          const [x2, y2] = r.coords[i + 1];
+          features.push({
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [(x1 + x2) / 2, (y1 + y2) / 2],
+            },
+            properties: {
+              polyIdx: r.path.polyIdx,
+              ringIdx: r.path.ringIdx,
+              insertAfter: i,
+            },
+          });
+        }
+      }
+      return { type: "FeatureCollection", features };
+    }
+
+    function refreshSources(): void {
+      const vs = m.getSource("ae-editor-vertices") as
+        | GeoJSONSource
+        | undefined;
+      const ms2 = m.getSource("ae-editor-midpoints") as
+        | GeoJSONSource
+        | undefined;
+      vs?.setData(vertexFC());
+      ms2?.setData(midpointFC());
+      // Also reflect changes on the main área-efectiva layer.
+      const efectivaSrc = m.getSource("area-efectiva") as
+        | GeoJSONSource
+        | undefined;
+      efectivaSrc?.setData({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: working,
+            properties: {},
+          },
+        ],
+      });
+    }
+
+    // ── Add sources & layers ────────────────────────────────────────
+    m.addSource("ae-editor-vertices", {
+      type: "geojson",
+      data: vertexFC(),
+    });
+    m.addSource("ae-editor-midpoints", {
+      type: "geojson",
+      data: midpointFC(),
+    });
+    m.addLayer({
+      id: "ae-editor-midpoints",
+      type: "circle",
+      source: "ae-editor-midpoints",
+      paint: {
+        "circle-radius": 5,
+        "circle-color": "#16a34a",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.5,
+        "circle-opacity": 0.85,
+      },
+    });
+    m.addLayer({
+      id: "ae-editor-vertices",
+      type: "circle",
+      source: "ae-editor-vertices",
+      paint: {
+        "circle-radius": 7,
+        "circle-color": "#0284c7",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 2,
+      },
+    });
+
+    // ── Drag state ──────────────────────────────────────────────────
+    type DragState = {
+      polyIdx: number;
+      ringIdx: number;
+      vertexIdx: number;
+    };
+    let dragging: DragState | null = null;
+
+    function onVertexMouseDown(
+      e: maplibregl.MapMouseEvent & {
+        features?: GeoJSON.Feature<GeoJSON.Point>[];
+      },
+    ): void {
+      if (!e.features || e.features.length === 0) return;
+      // Shift+click = delete vertex
+      if (e.originalEvent.shiftKey) {
+        const f = e.features[0];
+        const p = f.properties as {
+          polyIdx: number;
+          ringIdx: number;
+          vertexIdx: number;
+        };
+        deleteVertex(p.polyIdx, p.ringIdx, p.vertexIdx);
+        return;
+      }
+      e.preventDefault();
+      const f = e.features[0];
+      const p = f.properties as {
+        polyIdx: number;
+        ringIdx: number;
+        vertexIdx: number;
+      };
+      dragging = {
+        polyIdx: p.polyIdx,
+        ringIdx: p.ringIdx,
+        vertexIdx: p.vertexIdx,
+      };
+      map.getCanvas().style.cursor = "grabbing";
+      map.dragPan.disable();
+      map.on("mousemove", onMapMouseMove);
+      map.once("mouseup", onMapMouseUp);
+    }
+
+    function onMapMouseMove(e: maplibregl.MapMouseEvent): void {
+      if (!dragging) return;
+      const rings = getRings();
+      const ring = rings.find(
+        (r) =>
+          r.path.polyIdx === dragging!.polyIdx &&
+          r.path.ringIdx === dragging!.ringIdx,
+      );
+      if (!ring) return;
+      const newRing = ring.coords.slice();
+      newRing[dragging.vertexIdx] = [e.lngLat.lng, e.lngLat.lat];
+      // Keep the closing vertex synced if we moved the first.
+      if (dragging.vertexIdx === 0) {
+        newRing[newRing.length - 1] = [e.lngLat.lng, e.lngLat.lat];
+      }
+      setRing(ring.path, newRing);
+      refreshSources();
+    }
+
+    function onMapMouseUp(): void {
+      if (!dragging) return;
+      dragging = null;
+      map.getCanvas().style.cursor = "";
+      map.dragPan.enable();
+      map.off("mousemove", onMapMouseMove);
+      onAreaEfectivaGeomChange?.(working);
+    }
+
+    function deleteVertex(
+      polyIdx: number,
+      ringIdx: number,
+      vertexIdx: number,
+    ): void {
+      const rings = getRings();
+      const ring = rings.find(
+        (r) => r.path.polyIdx === polyIdx && r.path.ringIdx === ringIdx,
+      );
+      if (!ring) return;
+      // A valid ring needs ≥ 4 points (3 distinct + closing).
+      if (ring.coords.length <= 4) return;
+      const newRing = ring.coords.slice();
+      newRing.splice(vertexIdx, 1);
+      // If we removed index 0, make the new first point the closing one.
+      if (vertexIdx === 0) {
+        newRing[newRing.length - 1] = newRing[0];
+      }
+      setRing(ring.path, newRing);
+      refreshSources();
+      onAreaEfectivaGeomChange?.(working);
+    }
+
+    function onMidpointClick(
+      e: maplibregl.MapMouseEvent & {
+        features?: GeoJSON.Feature<GeoJSON.Point>[];
+      },
+    ): void {
+      if (!e.features || e.features.length === 0) return;
+      const f = e.features[0];
+      const p = f.properties as {
+        polyIdx: number;
+        ringIdx: number;
+        insertAfter: number;
+      };
+      const rings = getRings();
+      const ring = rings.find(
+        (r) => r.path.polyIdx === p.polyIdx && r.path.ringIdx === p.ringIdx,
+      );
+      if (!ring) return;
+      const newRing = ring.coords.slice();
+      newRing.splice(p.insertAfter + 1, 0, [e.lngLat.lng, e.lngLat.lat]);
+      setRing(ring.path, newRing);
+      refreshSources();
+      onAreaEfectivaGeomChange?.(working);
+    }
+
+    function onVertexEnter(): void {
+      map.getCanvas().style.cursor = "grab";
+    }
+    function onVertexLeave(): void {
+      if (!dragging) map.getCanvas().style.cursor = "";
+    }
+
+    map.on("mousedown", "ae-editor-vertices", onVertexMouseDown);
+    map.on("mouseenter", "ae-editor-vertices", onVertexEnter);
+    map.on("mouseleave", "ae-editor-vertices", onVertexLeave);
+    map.on("click", "ae-editor-midpoints", onMidpointClick);
+    map.on("mouseenter", "ae-editor-midpoints", onVertexEnter);
+    map.on("mouseleave", "ae-editor-midpoints", onVertexLeave);
+
+    // ── Cleanup ─────────────────────────────────────────────────────
+    return () => {
+      map.off("mousedown", "ae-editor-vertices", onVertexMouseDown);
+      map.off("mouseenter", "ae-editor-vertices", onVertexEnter);
+      map.off("mouseleave", "ae-editor-vertices", onVertexLeave);
+      map.off("click", "ae-editor-midpoints", onMidpointClick);
+      map.off("mouseenter", "ae-editor-midpoints", onVertexEnter);
+      map.off("mouseleave", "ae-editor-midpoints", onVertexLeave);
+      map.off("mousemove", onMapMouseMove);
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+
+      if (map.getLayer("ae-editor-vertices"))
+        map.removeLayer("ae-editor-vertices");
+      if (map.getLayer("ae-editor-midpoints"))
+        map.removeLayer("ae-editor-midpoints");
+      if (map.getSource("ae-editor-vertices"))
+        map.removeSource("ae-editor-vertices");
+      if (map.getSource("ae-editor-midpoints"))
+        map.removeSource("ae-editor-midpoints");
+
+      // Restore main efectiva layer to the persisted (unedited) polygon.
+      const efectivaSrc = map.getSource("area-efectiva") as
+        | GeoJSONSource
+        | undefined;
+      efectivaSrc?.setData(asAreaFeatureCollection(areaEfectiva));
+      onAreaEfectivaGeomChange?.(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingAreaEfectiva, mapLoaded, areaEfectivaEditorResetKey]);
+
   return (
     <div
       ref={containerRef}
       className="relative h-[480px] w-full overflow-hidden rounded-lg border border-stone-200"
     >
+      {/* Loading / error overlay — sits above the canvas, hidden once map loads */}
+      {!mapLoaded && !mapError && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-stone-50">
+          <span className="text-sm text-stone-400">Cargando mapa…</span>
+        </div>
+      )}
+      {mapError && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-stone-50 px-6">
+          <p className="text-center text-sm text-red-600">
+            <span className="font-semibold">Error al cargar el mapa:</span><br />{mapError}
+          </p>
+        </div>
+      )}
       <BasemapSelector value={basemap} onChange={setBasemap} />
       <MapLegend
         items={[

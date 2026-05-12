@@ -50,6 +50,15 @@ export default function ParamsTable({
   activeRuidoZone,
   activeSuelosCat,
 }: ParamsTableProps) {
+  if (factor === "flora" || factor === "fauna" || factor === "vida_acuatica" || factor === "rni") {
+    return (
+      <div className="rounded-lg border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
+        No hay tabla ECA parametrizada para este factor (aún). Usá la sección de “Resultados”
+        para adjuntar/registrar hallazgos y el resumen se consolidará en Capítulo 3.
+      </div>
+    );
+  }
+
   // ── Aire / Sedimentos: single-threshold ───────────────────────────────────
   if (factor === "aire" || factor === "sedimentos") {
     const rows = factor === "aire" ? AIRE_PARAMS : SEDIMENTOS_PARAMS;

@@ -69,7 +69,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen flex-1">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-stone-200 bg-white">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-stone-200/90 bg-white/85 backdrop-blur-sm">
         {/* Brand header */}
         <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-5 py-5">
           <Link href="/projects" className="block">
@@ -133,7 +133,11 @@ export default async function AppLayout({
           </div>
         </div>
       </aside>
-      <main className="flex-1 px-8 py-6">{children}</main>
+      <main className="flex-1 px-4 py-5 sm:px-8 sm:py-7">
+        <div className="mx-auto min-h-[calc(100vh-2rem)] max-w-[1600px] rounded-2xl border border-stone-200/80 bg-white/90 p-5 shadow-[var(--shadow-card)] backdrop-blur-sm sm:p-8">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

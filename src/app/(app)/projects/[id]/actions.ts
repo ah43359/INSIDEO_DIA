@@ -184,6 +184,66 @@ export async function enqueueUploadAreaEstudio(
   return { ok: true, jobId: String(data) };
 }
 
+// ─── Área efectiva ─────────────────────────────────────────────────────
+
+export async function regenerateAreaEfectiva(
+  projectId: string,
+  bufferM: number,
+): Promise<ActionResult> {
+  if (!Number.isFinite(bufferM) || bufferM < 1 || bufferM > 10000) {
+    return { ok: false, message: "Buffer debe estar entre 1 y 10000 m." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("regenerate_area_efectiva", {
+    p_project_id: projectId,
+    p_buffer_m: Math.round(bufferM),
+  });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+export async function saveAreaEfectivaGeom(
+  projectId: string,
+  geomGeoJson: string,
+): Promise<ActionResult> {
+  if (!geomGeoJson || geomGeoJson.length < 10) {
+    return { ok: false, message: "Geometría vacía." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_area_efectiva_geom", {
+    p_project_id: projectId,
+    p_geom_geojson: geomGeoJson,
+  });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+export async function deleteAreaEfectiva(
+  projectId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("delete_area_efectiva", {
+    p_project_id: projectId,
+  });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+// ─── Cancel a stuck job ────────────────────────────────────────────────
+
+export async function cancelDerivationJob(
+  jobId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("cancel_derivation_job", {
+    p_job_id: jobId,
+  });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true };
+}
+
 // ─── Vegetation (enqueue) ──────────────────────────────────────────────
 
 export async function enqueueVegetation(

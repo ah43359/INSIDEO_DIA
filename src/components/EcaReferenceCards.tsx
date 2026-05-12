@@ -67,6 +67,27 @@ const REGS_BY_FACTOR: Record<FactorKind, RegNorm[]> = {
     { id: "r1", text: "Ley N° 28611 – Ley General del Ambiente", on: true },
     { id: "r2", text: "NTP 27006 / ISO 4866 – Vibraciones Mecánicas", on: true },
   ],
+  flora: [
+    { id: "r1", text: "Ley N° 28611 – Ley General del Ambiente", on: true },
+    { id: "r2", text: "D.S. 043-2006-AG – Categorización de especies amenazadas de flora silvestre", on: true },
+    { id: "r3", text: "CITES – Apéndices (si aplica)", on: true },
+    { id: "r4", text: "IUCN – Lista Roja (si aplica)", on: true },
+  ],
+  fauna: [
+    { id: "r1", text: "Ley N° 28611 – Ley General del Ambiente", on: true },
+    { id: "r2", text: "D.S. 004-2014-MINAGRI – Categorización de especies amenazadas de fauna silvestre", on: true },
+    { id: "r3", text: "CITES – Apéndices (si aplica)", on: true },
+    { id: "r4", text: "IUCN – Lista Roja (si aplica)", on: true },
+  ],
+  vida_acuatica: [
+    { id: "r1", text: "Ley N° 28611 – Ley General del Ambiente", on: true },
+    { id: "r2", text: "D.S. N° 004-2017-MINAM – ECA para Agua (contexto)", on: true },
+    { id: "r3", text: "Protocolo / guía de muestreo biológico (según diseño)", on: true },
+  ],
+  rni: [
+    { id: "r1", text: "Ley N° 28611 – Ley General del Ambiente", on: true },
+    { id: "r2", text: "Norma / guía de RNI aplicable (definir según fuente y equipo)", on: true },
+  ],
 };
 
 interface EcaReferenceCardsProps {
@@ -265,6 +286,12 @@ function getEcaRefData(factor: FactorKind): EcaRefData | null {
           "Cat 1 (A1, A2) y Cat 4 (Lagos, Ríos) disponibles al seleccionar categoría en la matriz.",
       };
     }
+
+    case "flora":
+    case "fauna":
+    case "vida_acuatica":
+    case "rni":
+      return null;
 
     case "ruido": {
       return {

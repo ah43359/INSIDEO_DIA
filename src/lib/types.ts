@@ -91,6 +91,8 @@ export interface AreaEfectivaRow {
   area_ha: number;
   buffer_m: number;
   components_count: number;
+  /** 'auto' = hull+buffer, 'edited' = user-edited vertices, 'manual' = uploaded. */
+  source: "auto" | "edited" | "manual";
 }
 
 // ─── Área de estudio (baseline-sampling polygon) ──────────────────────
