@@ -4,9 +4,19 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+/** Validate that a post-auth redirect target stays on this origin.
+ *  Accepts only paths starting with "/" and not "//" (which would be
+ *  protocol-relative). Falls back to /projects on any failure.
+ */
+function safeNext(value: string): string {
+  if (!value.startsWith("/")) return "/projects";
+  if (value.startsWith("//")) return "/projects";
+  return value;
+}
+
 export async function signInWithMagicLink(formData: FormData): Promise<void> {
   const email = String(formData.get("email") ?? "").trim();
-  const next = String(formData.get("next") ?? "/projects");
+  const next = safeNext(String(formData.get("next") ?? "/projects"));
 
   if (!email) {
     redirect(
@@ -37,7 +47,7 @@ export async function signInWithMagicLink(formData: FormData): Promise<void> {
 export async function signInWithPassword(formData: FormData): Promise<void> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/projects");
+  const next = safeNext(String(formData.get("next") ?? "/projects"));
 
   if (!email || !password) {
     redirect(

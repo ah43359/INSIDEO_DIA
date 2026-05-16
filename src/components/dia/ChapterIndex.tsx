@@ -26,12 +26,16 @@ export default function ChapterIndex({ projectId, projectName }: ChapterIndexPro
   const [generate, setGenerate] = useState<GenerateState>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // SSR + localStorage hydration overlay: read draft statuses on the client
+  // after mount. See Cap2Editor for the pattern rationale.
   useEffect(() => {
     const next: Record<number, ChapterDraftStatus> = {};
     for (const c of DIA_CHAPTERS) {
       next[c.id] = readChapterDraftStatus(c.id, projectId);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatuses(next);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, [projectId]);
 

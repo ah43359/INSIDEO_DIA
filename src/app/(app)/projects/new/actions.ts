@@ -13,6 +13,15 @@ function errorRedirect(msg: string): never {
 }
 
 export async function importRfi(formData: FormData): Promise<void> {
+  // Reject unauthenticated callers up front. This Server Action performs
+  // multi-table writes (`clientes`, `projects`) and must never run without
+  // a Supabase session.
+  const supabaseAuth = await createClient();
+  const { data: userData, error: authError } = await supabaseAuth.auth.getUser();
+  if (authError || !userData?.user) {
+    redirect("/login?error=Inicia%20sesi%C3%B3n%20para%20importar%20RFI");
+  }
+
   const rfiFile = formData.get("rfi") as File | null;
   const componentsFile = formData.get("components") as File | null;
 
@@ -60,8 +69,8 @@ export async function importRfi(formData: FormData): Promise<void> {
   // 4. Cross-validate
   const report = crossValidate(rfi, features);
 
-  // 5. Submit to Supabase
-  const supabase = await createClient();
+  // 5. Submit to Supabase (reuse the authenticated client from the auth guard)
+  const supabase = supabaseAuth;
   let result;
   try {
     const rfiBytes = await rfiFile.arrayBuffer();

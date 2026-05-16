@@ -46,15 +46,8 @@ export async function POST(
     .single();
 
   if (projectError || !project) {
-    return NextResponse.json(
-      {
-        error: "Proyecto no encontrado",
-        detail: projectError?.message,
-        code: projectError?.code,
-        queried_id: id,
-      },
-      { status: 404 },
-    );
+    if (projectError) console.error("[api/pdt] project lookup failed", projectError);
+    return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
   }
 
   // Load sampling stations

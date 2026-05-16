@@ -376,9 +376,12 @@ export default function ProjectMap({
     setMapLoaded(false);
 
     // Hard gate: MapLibre GL v5 requires WebGL2.
+    // SetState in an effect is acceptable here because this is a hard
+    // capability gate; we don't continue mounting the map without WebGL2.
     {
       const probe = document.createElement("canvas");
       if (!probe.getContext("webgl2")) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMapError("Tu navegador no soporta WebGL2, necesario para el mapa.");
         return;
       }
@@ -522,7 +525,6 @@ export default function ProjectMap({
 });
   
 // Departamentos — political boundaries level 1 (loaded from Supabase)
-      console.log('Creating departamentos source');
       map.addSource("departamentos", {
         type: "geojson",
         data: boundaryData.departamentos ?? EMPTY_FC,
@@ -1335,16 +1337,7 @@ export default function ProjectMap({
     const deptSrc = map.getSource("departamentos") as GeoJSONSource | undefined;
     const provSrc = map.getSource("provincias") as GeoJSONSource | undefined;
     const distSrc = map.getSource("distritos") as GeoJSONSource | undefined;
-    
-    console.log('Updating boundary sources:', {
-      deptSrc: !!deptSrc,
-      provSrc: !!provSrc,
-      distSrc: !!distSrc,
-      deptData: boundaryData.departamentos?.features?.length,
-      provData: boundaryData.provincias?.features?.length,
-      distData: boundaryData.distritos?.features?.length,
-    });
-    
+
     if (deptSrc) {
       deptSrc.setData(boundaryData.departamentos ?? EMPTY_FC);
     }
@@ -1536,7 +1529,7 @@ export default function ProjectMap({
     const m: MlMap = map;
 
     // Deep clone so prop never mutates.
-    let working: GeoJSON.Polygon | GeoJSON.MultiPolygon = JSON.parse(
+    const working: GeoJSON.Polygon | GeoJSON.MultiPolygon = JSON.parse(
       JSON.stringify(seed),
     );
     onAreaEfectivaGeomChange?.(working);
@@ -1678,7 +1671,7 @@ export default function ProjectMap({
 
     function onVertexMouseDown(
       e: maplibregl.MapMouseEvent & {
-        features?: GeoJSON.Feature<GeoJSON.Point>[];
+        features?: maplibregl.MapGeoJSONFeature[];
       },
     ): void {
       if (!e.features || e.features.length === 0) return;
@@ -1705,10 +1698,10 @@ export default function ProjectMap({
         ringIdx: p.ringIdx,
         vertexIdx: p.vertexIdx,
       };
-      map.getCanvas().style.cursor = "grabbing";
-      map.dragPan.disable();
-      map.on("mousemove", onMapMouseMove);
-      map.once("mouseup", onMapMouseUp);
+      m.getCanvas().style.cursor = "grabbing";
+      m.dragPan.disable();
+      m.on("mousemove", onMapMouseMove);
+      m.once("mouseup", onMapMouseUp);
     }
 
     function onMapMouseMove(e: maplibregl.MapMouseEvent): void {
@@ -1733,9 +1726,9 @@ export default function ProjectMap({
     function onMapMouseUp(): void {
       if (!dragging) return;
       dragging = null;
-      map.getCanvas().style.cursor = "";
-      map.dragPan.enable();
-      map.off("mousemove", onMapMouseMove);
+      m.getCanvas().style.cursor = "";
+      m.dragPan.enable();
+      m.off("mousemove", onMapMouseMove);
       onAreaEfectivaGeomChange?.(working);
     }
 
@@ -1764,7 +1757,7 @@ export default function ProjectMap({
 
     function onMidpointClick(
       e: maplibregl.MapMouseEvent & {
-        features?: GeoJSON.Feature<GeoJSON.Point>[];
+        features?: maplibregl.MapGeoJSONFeature[];
       },
     ): void {
       if (!e.features || e.features.length === 0) return;
@@ -1787,42 +1780,42 @@ export default function ProjectMap({
     }
 
     function onVertexEnter(): void {
-      map.getCanvas().style.cursor = "grab";
+      m.getCanvas().style.cursor = "grab";
     }
     function onVertexLeave(): void {
-      if (!dragging) map.getCanvas().style.cursor = "";
+      if (!dragging) m.getCanvas().style.cursor = "";
     }
 
-    map.on("mousedown", "ae-editor-vertices", onVertexMouseDown);
-    map.on("mouseenter", "ae-editor-vertices", onVertexEnter);
-    map.on("mouseleave", "ae-editor-vertices", onVertexLeave);
-    map.on("click", "ae-editor-midpoints", onMidpointClick);
-    map.on("mouseenter", "ae-editor-midpoints", onVertexEnter);
-    map.on("mouseleave", "ae-editor-midpoints", onVertexLeave);
+    m.on("mousedown", "ae-editor-vertices", onVertexMouseDown);
+    m.on("mouseenter", "ae-editor-vertices", onVertexEnter);
+    m.on("mouseleave", "ae-editor-vertices", onVertexLeave);
+    m.on("click", "ae-editor-midpoints", onMidpointClick);
+    m.on("mouseenter", "ae-editor-midpoints", onVertexEnter);
+    m.on("mouseleave", "ae-editor-midpoints", onVertexLeave);
 
     // ── Cleanup ─────────────────────────────────────────────────────
     return () => {
-      map.off("mousedown", "ae-editor-vertices", onVertexMouseDown);
-      map.off("mouseenter", "ae-editor-vertices", onVertexEnter);
-      map.off("mouseleave", "ae-editor-vertices", onVertexLeave);
-      map.off("click", "ae-editor-midpoints", onMidpointClick);
-      map.off("mouseenter", "ae-editor-midpoints", onVertexEnter);
-      map.off("mouseleave", "ae-editor-midpoints", onVertexLeave);
-      map.off("mousemove", onMapMouseMove);
-      map.dragPan.enable();
-      map.getCanvas().style.cursor = "";
+      m.off("mousedown", "ae-editor-vertices", onVertexMouseDown);
+      m.off("mouseenter", "ae-editor-vertices", onVertexEnter);
+      m.off("mouseleave", "ae-editor-vertices", onVertexLeave);
+      m.off("click", "ae-editor-midpoints", onMidpointClick);
+      m.off("mouseenter", "ae-editor-midpoints", onVertexEnter);
+      m.off("mouseleave", "ae-editor-midpoints", onVertexLeave);
+      m.off("mousemove", onMapMouseMove);
+      m.dragPan.enable();
+      m.getCanvas().style.cursor = "";
 
-      if (map.getLayer("ae-editor-vertices"))
-        map.removeLayer("ae-editor-vertices");
-      if (map.getLayer("ae-editor-midpoints"))
-        map.removeLayer("ae-editor-midpoints");
-      if (map.getSource("ae-editor-vertices"))
-        map.removeSource("ae-editor-vertices");
-      if (map.getSource("ae-editor-midpoints"))
-        map.removeSource("ae-editor-midpoints");
+      if (m.getLayer("ae-editor-vertices"))
+        m.removeLayer("ae-editor-vertices");
+      if (m.getLayer("ae-editor-midpoints"))
+        m.removeLayer("ae-editor-midpoints");
+      if (m.getSource("ae-editor-vertices"))
+        m.removeSource("ae-editor-vertices");
+      if (m.getSource("ae-editor-midpoints"))
+        m.removeSource("ae-editor-midpoints");
 
       // Restore main efectiva layer to the persisted (unedited) polygon.
-      const efectivaSrc = map.getSource("area-efectiva") as
+      const efectivaSrc = m.getSource("area-efectiva") as
         | GeoJSONSource
         | undefined;
       efectivaSrc?.setData(asAreaFeatureCollection(areaEfectiva));

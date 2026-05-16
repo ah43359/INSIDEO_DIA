@@ -82,9 +82,12 @@ export default function ChapterEditor({
   const [synthErrors, setSynthErrors] = useState<Array<{ sectionId: string; message: string }>>([]);
   const ragEnabled = RAG_ENABLED_CHAPTERS.has(chapterId);
 
+  // SSR + localStorage hydration overlay — see Cap2Editor for the rationale.
   useEffect(() => {
     const loaded = loadChapterState(chapterId, projectId, prefill);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(migrate ? migrate(loaded) : loaded);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, [chapterId, projectId, prefill, migrate]);
 
