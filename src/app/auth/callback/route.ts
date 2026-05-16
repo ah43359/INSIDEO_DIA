@@ -13,7 +13,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     | "email_change"
     | "email"
     | null;
-  const next = url.searchParams.get("next") ?? "/projects";
+  // Validate `next` stays on this origin. Reject anything that is not a
+  // root-relative path (open redirect protection).
+  const rawNext = url.searchParams.get("next") ?? "/projects";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//")
+    ? rawNext
+    : "/projects";
 
   const supabase = await createClient();
 

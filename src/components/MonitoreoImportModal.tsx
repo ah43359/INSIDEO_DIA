@@ -508,7 +508,7 @@ export default function MonitoreoImportModal({
                           : "bg-teal-50 border-teal-200 text-teal-800"
                       }`}
                     >
-                      "{h.header}" → {h.match}
+                      &quot;{h.header}&quot; → {h.match}
                     </span>
                   ))}
                 </div>

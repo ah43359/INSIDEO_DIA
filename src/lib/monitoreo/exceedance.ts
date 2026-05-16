@@ -18,7 +18,9 @@ function parseValue(raw: string | number | null | undefined): number | null {
 }
 
 function parseRange(raw: string): [number, number] | null {
-  const parts = raw.split("–");
+  // Accept both en-dash and hyphen as separators, tolerate whitespace.
+  const normalized = raw.replace(/–/g, "-").replace(/\s+/g, " ").trim();
+  const parts = normalized.split("-").map((p) => p.trim());
   if (parts.length !== 2) return null;
   const lo = parseValue(parts[0]);
   const hi = parseValue(parts[1]);
@@ -75,12 +77,21 @@ export function exceedsByOp(
       return false;
     case "range":
       return exceedsRange(rawValue, thresholdRaw);
-    case "lt":
-      return v < parseValue(thresholdRaw)!;
-    case "lte":
-      return v <= parseValue(thresholdRaw)!;
-    case "gte":
-      return v >= parseValue(thresholdRaw)!;
+    case "lt": {
+      const t = parseValue(thresholdRaw);
+      if (t == null) return false;
+      return v < t;
+    }
+    case "lte": {
+      const t = parseValue(thresholdRaw);
+      if (t == null) return false;
+      return v <= t;
+    }
+    case "gte": {
+      const t = parseValue(thresholdRaw);
+      if (t == null) return false;
+      return v >= t;
+    }
     case "gt":
     default:
       return exceedsSingle(rawValue, parseValue(thresholdRaw));
@@ -104,7 +115,16 @@ export function exceedsGroundwater(
   return exceedsByOp(rawValue, thresholdRaw, compareOp);
 }
 
-/** Water multi-column params (D1/D2, Cat1, Cat4) */
+/** Water multi-column params (D1/D2, Cat1, Cat4).
+ *
+ * Auto-detects comparison from the threshold string format because the
+ * EcaParamMulti registry does not carry a compare_op field per row:
+ *   - "–" or ""  → no threshold, never exceeds
+ *   - "≥ X"      → "≥ X" lower bound; values below X are exceedances (e.g. OD)
+ *   - "A – B"    → range; values outside [A, B] are exceedances (e.g. pH)
+ *   - "X"        → standard ">"; values above X are exceedances
+ * The `compareOp` arg is retained as an override fallback.
+ */
 export function exceedsAguaMulti(
   rawValue: string | number | null | undefined,
   thresholdRaw: string,
@@ -112,6 +132,8 @@ export function exceedsAguaMulti(
 ): boolean {
   if (thresholdRaw === "–" || thresholdRaw === "") return false;
   if (thresholdRaw.startsWith("≥")) return exceedsGTE(rawValue, thresholdRaw);
+  // A range threshold contains an en-dash or hyphen between two numbers.
+  if (/\d\s*[-–]\s*\d/.test(thresholdRaw)) return exceedsRange(rawValue, thresholdRaw);
   return exceedsByOp(rawValue, thresholdRaw, compareOp);
 }
 

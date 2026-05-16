@@ -60,10 +60,8 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
     .eq("id", id)
     .single();
   if (projectError || !project) {
-    return NextResponse.json(
-      { error: "Proyecto no encontrado", detail: projectError?.message },
-      { status: 404 },
-    );
+    if (projectError) console.error("[api/dia] project lookup failed", projectError);
+    return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
   }
   const projectName = (project as { nombre_proyecto: string }).nombre_proyecto;
 

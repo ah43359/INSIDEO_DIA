@@ -64,9 +64,16 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
   const [notification, setNotification] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Hydrate from localStorage on mount (overlays the SSR prefill)
+  // Hydrate from localStorage on mount (overlays the SSR prefill). The
+  // set-state-in-effect rule fires here because we call setState from inside
+  // an effect body, but this is the canonical SSR + localStorage hydration
+  // overlay pattern: the initial render uses `prefill`, then the client-only
+  // localStorage state replaces it after mount. A lazy useState initializer
+  // would not work because `prefill` can change across renders.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(loadState(projectId, prefill));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, [projectId, prefill]);
 

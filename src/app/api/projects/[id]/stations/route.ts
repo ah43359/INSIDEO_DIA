@@ -46,7 +46,11 @@ export async function POST(
     .eq("project_id", id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[api/stations] update failed", error);
+    return NextResponse.json(
+      { error: "Error actualizando estación" },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ success: true });

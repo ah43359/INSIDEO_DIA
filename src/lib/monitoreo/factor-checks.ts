@@ -100,6 +100,8 @@ export function checkExceeds(
       const p = AGUA_MULTI_PARAMS.find((x) => x.id === paramId);
       if (!p) return false;
       const threshold = p.thresholds[sel.aguaCat] ?? p.thresholds.cat3r;
+      // exceedsAguaMulti auto-detects "range" / "lt" / "gt" from the threshold
+      // string format (e.g. "6,5 – 8,5" → range, "≥ 4" → lt, "0,1" → gt).
       return exceedsAguaMulti(raw, threshold, "gt");
     }
     case "agua_subterranea": {

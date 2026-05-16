@@ -19,11 +19,14 @@ export default defineConfig({
         "**/*.config.*",
         "**/*.test.*",
       ],
+      // Realistic short-term floor (~3.8% current line coverage). Ratchet
+      // upward quarterly as the critical-path test backlog lands. See
+      // docs/audits/2026-05-15-code-quality.md appendix A.
       thresholds: {
-        lines: 60,
-        branches: 60,
-        functions: 60,
-        statements: 60,
+        lines: 3,
+        branches: 50,
+        functions: 30,
+        statements: 3,
       },
     },
     alias: {

@@ -125,8 +125,10 @@ async function synthesizeOne(
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const block = response.content.find((b) => b.type === "text");
-  const text = block && block.type === "text" ? block.text.trim() : "";
+  const block = response.content.find(
+    (b): b is Anthropic.Messages.TextBlock => b.type === "text",
+  );
+  const text = block ? block.text.trim() : "";
 
   return {
     sectionId: section.sectionId,
