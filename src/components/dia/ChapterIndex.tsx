@@ -31,6 +31,7 @@ export default function ChapterIndex({ projectId, projectName }: ChapterIndexPro
     for (const c of DIA_CHAPTERS) {
       next[c.id] = readChapterDraftStatus(c.id, projectId);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- draft status is read from localStorage after mount.
     setStatuses(next);
     setHydrated(true);
   }, [projectId]);

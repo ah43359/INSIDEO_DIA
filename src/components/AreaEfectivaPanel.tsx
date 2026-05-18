@@ -205,6 +205,17 @@ export default function AreaEfectivaPanel({
         <Stat label="Vértices" value={String(vertexCount)} />
       </div>
 
+      {/* Stale warning: components added/edited after this polygon was generated. */}
+      {areaEfectiva?.is_stale && !editing && (
+        <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <p className="font-semibold">El polígono está desactualizado.</p>
+          <p>
+            Se agregaron o modificaron componentes después de la última generación.
+            Hacé click en <b>Regenerar</b> para incluirlos.
+          </p>
+        </div>
+      )}
+
       {/* Buffer + regenerate */}
       {!editing && (
         <div className="flex flex-wrap items-end gap-2">

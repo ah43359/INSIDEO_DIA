@@ -19,6 +19,8 @@ export interface SynthesisItem {
   sectionTitle: string;
   content: string;
   citations: readonly SynthesisCitation[];
+  /** True for parent (non-leaf) intro sections generated in phase 2. */
+  isParent?: boolean;
 }
 
 interface SynthesisModalProps {
@@ -28,6 +30,10 @@ interface SynthesisModalProps {
   onAcceptAll: () => void;
   onAcceptOne: (sectionId: string) => void;
   onCancel: () => void;
+  /** When true, content was auto-saved as it streamed in; modal is review-only. */
+  autoApplied?: boolean;
+  /** Called when user wants to discard all auto-saved content (revert). */
+  onRevertAll?: () => void;
 }
 
 export default function SynthesisModal({
@@ -37,6 +43,8 @@ export default function SynthesisModal({
   onAcceptAll,
   onAcceptOne,
   onCancel,
+  autoApplied,
+  onRevertAll,
 }: SynthesisModalProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   if (!open) return null;
@@ -47,11 +55,12 @@ export default function SynthesisModal({
         <div className="flex items-center justify-between border-b border-stone-200 px-5 py-3">
           <div>
             <h2 className="text-sm font-semibold text-stone-800">
-              Vista previa: contenido generado con IA
+              {autoApplied ? "Contenido generado y guardado" : "Vista previa: contenido generado con IA"}
             </h2>
             <p className="mt-0.5 text-xs text-stone-500">
-              {items.length} sección{items.length === 1 ? "" : "es"} sintetizada
-              {items.length === 1 ? "" : "s"} a partir de DIAs aprobados.
+              {autoApplied
+                ? `${items.length} sección${items.length === 1 ? "" : "es"} guardada${items.length === 1 ? "" : "s"} en el capítulo. Revisa y cierra, o revierta si no te convence.`
+                : `${items.length} sección${items.length === 1 ? "" : "es"} sintetizada${items.length === 1 ? "" : "s"} a partir de DIAs aprobados.`}
             </p>
           </div>
           <button
@@ -101,6 +110,11 @@ export default function SynthesisModal({
                       <p className="font-mono text-xs text-stone-400">{item.sectionId}</p>
                       <p className="truncate text-sm font-medium text-stone-800">
                         {item.sectionTitle}
+                        {item.isParent && (
+                          <span className="ml-2 rounded-full bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-700">
+                            Introducción
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -112,12 +126,18 @@ export default function SynthesisModal({
                       >
                         {isExpanded ? "Colapsar" : "Ver completo"}
                       </button>
-                      <button
-                        onClick={() => onAcceptOne(item.sectionId)}
-                        className="rounded-md bg-stone-800 px-2 py-1 text-xs font-medium text-white hover:bg-stone-700"
-                      >
-                        Aceptar
-                      </button>
+                      {autoApplied ? (
+                        <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
+                          ✓ Guardado
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => onAcceptOne(item.sectionId)}
+                          className="rounded-md bg-stone-800 px-2 py-1 text-xs font-medium text-white hover:bg-stone-700"
+                        >
+                          Aceptar
+                        </button>
+                      )}
                     </div>
                   </header>
                   <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-stone-700">
@@ -146,19 +166,40 @@ export default function SynthesisModal({
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-stone-200 px-5 py-3">
-          <button
-            onClick={onCancel}
-            className="rounded-md border border-stone-200 px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50"
-          >
-            Cancelar
-          </button>
-          {items.length > 0 && (
-            <button
-              onClick={onAcceptAll}
-              className="rounded-md bg-stone-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700"
-            >
-              Aceptar todas ({items.length})
-            </button>
+          {autoApplied ? (
+            <>
+              {onRevertAll && (
+                <button
+                  onClick={onRevertAll}
+                  className="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                >
+                  Revertir todo
+                </button>
+              )}
+              <button
+                onClick={onAcceptAll}
+                className="rounded-md bg-stone-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700"
+              >
+                Cerrar
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onCancel}
+                className="rounded-md border border-stone-200 px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50"
+              >
+                Cancelar
+              </button>
+              {items.length > 0 && (
+                <button
+                  onClick={onAcceptAll}
+                  className="rounded-md bg-stone-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700"
+                >
+                  Aceptar todas ({items.length})
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

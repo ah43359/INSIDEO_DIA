@@ -26,6 +26,11 @@ import type { ChapterId } from "@/lib/dia/framework/manifest";
 import SynthesisModal, {
   type SynthesisItem,
 } from "@/components/dia/SynthesisModal";
+import { migrateCap6V1ToV2 } from "@/lib/dia/cap6/migration";
+
+const CHAPTER_MIGRATIONS: Partial<Record<ChapterId, (state: ChapterState) => ChapterState>> = {
+  6: migrateCap6V1ToV2,
+};
 
 export interface ChapterEditorProps {
   chapterId: ChapterId;
@@ -40,19 +45,32 @@ export interface ChapterEditorProps {
   initialActiveId: string;
   /** Section ids whose subtree starts expanded. */
   initiallyOpenIds: readonly string[];
-  /** Optional one-shot migration applied after loading from localStorage
-   *  (e.g. Cap. 6 v1 → v2 schema migration). */
-  migrate?: (state: ChapterState) => ChapterState;
+
+  // ── Optional render slots for per-chapter customization ─────────────────
+  /** Custom UI rendered above the default warnings/heading. Per-chapter
+   *  callouts (e.g. baseline-station status for Cap 3, Conesa scaffold for
+   *  Cap 5). */
+  headerExtras?: React.ReactNode;
+  /** Custom UI rendered in the left sidebar above the section tree (e.g.
+   *  Cap 2's UTM zone selector, Cap 6's plan-de-cierre toggle). */
+  sidebarTopExtras?: React.ReactNode;
+  /** Custom UI rendered in the left sidebar below the section tree (e.g.
+   *  chapter-specific export presets). */
+  sidebarBottomExtras?: React.ReactNode;
+  /** Override the chapter's docx-export filename prefix (default: `Cap{N}`). */
+  exportFilenamePrefix?: string;
 }
 
 type GenerateState = "idle" | "generating" | "error";
 type SynthesisState = "idle" | "synthesizing" | "previewing" | "error";
 
 /** Chapters where the "Generar con IA" RAG button is enabled. Driven by
- *  whether the corpus has been indexed for that chapter — currently
- *  only Cap. 6 (Plan de Manejo Ambiental) has approved DIAs in the
- *  E:/Architecture/DIA Examples/Cap6 folder. */
-const RAG_ENABLED_CHAPTERS: ReadonlySet<ChapterId> = new Set([6]);
+ *  whether the corpus has been indexed for that chapter via either:
+ *    - `scripts/dia-corpus/index-cap.ts` (.docx examples)
+ *    - `skills/minem-dia-scraper/scripts/pdf_to_corpus.py` (scraped MINEM PDFs)
+ *  Until the corpus has rows for a chapter the retrieval falls back gracefully,
+ *  but the button is hidden to avoid noise. */
+const RAG_ENABLED_CHAPTERS: ReadonlySet<ChapterId> = new Set([2, 3, 4, 5, 6, 7]);
 
 export default function ChapterEditor({
   chapterId,
@@ -65,7 +83,10 @@ export default function ChapterEditor({
   dgGroups,
   initialActiveId,
   initiallyOpenIds,
-  migrate,
+  headerExtras,
+  sidebarTopExtras,
+  sidebarBottomExtras,
+  exportFilenamePrefix,
 }: ChapterEditorProps) {
   const [state, setState] = useState<ChapterState>(prefill);
   const [hydrated, setHydrated] = useState(false);
@@ -80,13 +101,24 @@ export default function ChapterEditor({
   const [synthState, setSynthState] = useState<SynthesisState>("idle");
   const [synthItems, setSynthItems] = useState<SynthesisItem[]>([]);
   const [synthErrors, setSynthErrors] = useState<Array<{ sectionId: string; message: string }>>([]);
+  const [synthProgress, setSynthProgress] = useState<{
+    phase: 1 | 2;
+    done: number;
+    total: number;
+  } | null>(null);
+  // Accumulates section results as they stream in; flushed to synthItems when the result event arrives.
+  const streamedItemsRef = useRef<SynthesisItem[]>([]);
+  // Tracks which sectionIds were auto-saved during streaming, so we can revert them.
+  const autoSavedIdsRef = useRef<string[]>([]);
   const ragEnabled = RAG_ENABLED_CHAPTERS.has(chapterId);
 
   useEffect(() => {
     const loaded = loadChapterState(chapterId, projectId, prefill);
+    const migrate = CHAPTER_MIGRATIONS[chapterId];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only available after mount.
     setState(migrate ? migrate(loaded) : loaded);
     setHydrated(true);
-  }, [chapterId, projectId, prefill, migrate]);
+  }, [chapterId, projectId, prefill]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -157,7 +189,7 @@ export default function ChapterEditor({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Cap${chapterId}_${chapterTitle.replace(/\s+/g, "_")}_${projectName.replace(/\s+/g, "_")}.docx`;
+      a.download = `${exportFilenamePrefix ?? `Cap${chapterId}`}_${chapterTitle.replace(/\s+/g, "_")}_${projectName.replace(/\s+/g, "_")}.docx`;
       a.click();
       URL.revokeObjectURL(url);
       setGenerate("idle");
@@ -173,49 +205,57 @@ export default function ChapterEditor({
     window.setTimeout(() => setNotification(null), 2200);
   }
 
-  /** Collect all sections (leaves) that should be sent to the synthesis
-   *  endpoint. We include any leaf that doesn't already have user-typed
-   *  free-text in state.content[sectionId]. The user can re-run after
-   *  editing to refresh other sections too. */
+  /** Build a flat title map from the full section tree (including parent nodes)
+   *  so we can resolve titles for both leaf and parent synthesis results. */
+  function buildTitleMap(nodes: readonly SectionNode[]): Map<string, string> {
+    const m = new Map<string, string>();
+    function walk(ns: readonly SectionNode[]): void {
+      for (const n of ns) {
+        m.set(n.id, n.title);
+        walk(n.children);
+      }
+    }
+    walk(nodes);
+    return m;
+  }
+
+  /** Collect all leaf sections to synthesize. Always includes every leaf
+   *  (force-regenerate semantics) so a full chapter is generated in one run. */
   function leavesToSynthesize(): Array<{ sectionId: string; sectionTitle: string; userFields: ChapterFields }> {
     const out: Array<{ sectionId: string; sectionTitle: string; userFields: ChapterFields }> = [];
     function walk(nodes: readonly SectionNode[]): void {
       for (const node of nodes) {
-        const isLeaf = node.children.length === 0;
-        if (isLeaf) {
-          const hasContent = !!state.content[node.id]?.trim();
-          if (!hasContent) {
-            // Collect user fields for this section's structured group, if any
-            const userFields: ChapterFields = {};
-            if (node.structuredType) {
-              const fs = dgGroups[node.structuredType];
-              if (fs) {
-                for (const f of fs) {
-                  const v = state.dgFields[f.key];
-                  if (v && v.trim()) userFields[f.key] = v;
-                }
+        if (node.children.length === 0) {
+          // Collect user fields for this section's structured group, if any
+          const userFields: ChapterFields = {};
+          if (node.structuredType) {
+            const fs = dgGroups[node.structuredType];
+            if (fs) {
+              for (const f of fs) {
+                const v = state.dgFields[f.key];
+                if (v && v.trim()) userFields[f.key] = v;
               }
             }
-            out.push({ sectionId: node.id, sectionTitle: node.title, userFields });
           }
+          out.push({ sectionId: node.id, sectionTitle: node.title, userFields });
         } else {
           walk(node.children);
         }
       }
     }
     walk(sections);
-    // Cap to 50 sections (matches API limit)
-    return out.slice(0, 50);
+    // Cap to 80 sections (matches API limit)
+    return out.slice(0, 80);
   }
 
   async function handleSynthesize(): Promise<void> {
     const targets = leavesToSynthesize();
-    if (targets.length === 0) {
-      flashNotice("Todas las secciones ya tienen contenido. Limpia alguna para volver a sintetizar.");
-      return;
-    }
     setSynthState("synthesizing");
+    setSynthProgress({ phase: 1, done: 0, total: targets.length });
     setErrorMsg(null);
+    streamedItemsRef.current = [];
+    autoSavedIdsRef.current = [];
+
     try {
       const response = await fetch(
         `/api/projects/${projectId}/dia/${chapterId}/synthesize`,
@@ -232,45 +272,128 @@ export default function ChapterEditor({
           ?? `Error ${response.status}`;
         throw new Error(detail);
       }
-      const json = (await response.json()) as {
-        results: Array<{
-          sectionId: string;
-          content: string;
-          citations: SynthesisItem["citations"];
-          passagesRetrieved: number;
-        }>;
-        errors: Array<{ sectionId: string; message: string }>;
-      };
-      // Map results back to titles
-      const titleById = new Map(targets.map((t) => [t.sectionId, t.sectionTitle]));
-      const items: SynthesisItem[] = json.results.map((r) => ({
-        sectionId: r.sectionId,
-        sectionTitle: titleById.get(r.sectionId) ?? r.sectionId,
-        content: r.content,
-        citations: r.citations,
-      }));
-      setSynthItems(items);
-      setSynthErrors(json.errors);
-      setSynthState("previewing");
+
+      // Read streaming NDJSON — one JSON object per line.
+      // Each `section` event is auto-saved to state immediately so that
+      // a dropped connection never loses already-generated content.
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const titleById = buildTitleMap(sections);
+      const leafIds = new Set(targets.map((t) => t.sectionId));
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          // Flush any remaining buffered line if stream closed without a newline
+          if (buffer.trim()) {
+            try {
+              const msg = JSON.parse(buffer) as Record<string, unknown>;
+              if (msg.type === "result") {
+                const payload = msg as unknown as {
+                  errors: Array<{ sectionId: string; message: string }>;
+                };
+                setSynthItems([...streamedItemsRef.current]);
+                setSynthErrors(payload.errors);
+                setSynthProgress(null);
+                setSynthState("previewing");
+              }
+            } catch { /* ignore malformed trailing chunk */ }
+          } else if (streamedItemsRef.current.length > 0) {
+            // Stream ended without a result event — show what we got
+            setSynthItems([...streamedItemsRef.current]);
+            setSynthErrors([]);
+            setSynthProgress(null);
+            setSynthState("previewing");
+          }
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line) as Record<string, unknown>;
+
+          if (msg.type === "start") {
+            setSynthProgress({ phase: 1, done: 0, total: msg.totalLeaves as number });
+          } else if (msg.type === "section") {
+            // Auto-save each section to state as it arrives — survives connection drops
+            const sectionId = msg.sectionId as string;
+            const content = msg.content as string;
+            setContent(sectionId, content);
+            autoSavedIdsRef.current = [...autoSavedIdsRef.current, sectionId];
+            const item: SynthesisItem = {
+              sectionId,
+              sectionTitle: titleById.get(sectionId) ?? sectionId,
+              content,
+              citations: msg.citations as SynthesisItem["citations"],
+              isParent: msg.isParent as boolean ?? !leafIds.has(sectionId),
+            };
+            streamedItemsRef.current = [...streamedItemsRef.current, item];
+          } else if (msg.type === "progress") {
+            setSynthProgress({
+              phase: msg.phase as 1 | 2,
+              done: msg.done as number,
+              total: msg.total as number,
+            });
+          } else if (msg.type === "phase2_start") {
+            setSynthProgress({ phase: 2, done: 0, total: msg.totalParents as number });
+          } else if (msg.type === "error") {
+            throw new Error(msg.message as string);
+          } else if (msg.type === "result") {
+            const payload = msg as unknown as {
+              errors: Array<{ sectionId: string; message: string }>;
+            };
+            setSynthItems([...streamedItemsRef.current]);
+            setSynthErrors(payload.errors);
+            setSynthProgress(null);
+            setSynthState("previewing");
+            break outer;
+          }
+        }
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Error desconocido");
-      setSynthState("error");
+      setSynthProgress(null);
+      // Even on error, if we streamed some sections already show the modal
+      if (streamedItemsRef.current.length > 0) {
+        setSynthItems([...streamedItemsRef.current]);
+        setSynthErrors([]);
+        setSynthState("previewing");
+      } else {
+        setSynthState("error");
+      }
     }
   }
 
-  function acceptSynthesis(sectionIds: readonly string[]): void {
-    setState((s) => {
-      const nextContent = { ...s.content };
-      for (const sid of sectionIds) {
-        const item = synthItems.find((it) => it.sectionId === sid);
-        if (item) nextContent[sid] = item.content;
-      }
-      return { ...s, content: nextContent };
-    });
+  function acceptSynthesis(): void {
+    // Content was already auto-saved section-by-section as the stream arrived.
+    // This just closes the review modal.
     setSynthState("idle");
     setSynthItems([]);
     setSynthErrors([]);
-    flashNotice(`Aplicado a ${sectionIds.length} sección(es). Recuerda generar el Word para verlo.`);
+    autoSavedIdsRef.current = [];
+    streamedItemsRef.current = [];
+  }
+
+  function revertSynthesis(): void {
+    // Clear all sections that were auto-saved during this generation run
+    const idsToRevert = autoSavedIdsRef.current;
+    if (idsToRevert.length > 0) {
+      setState((s) => {
+        const nextContent = { ...s.content };
+        for (const sid of idsToRevert) delete nextContent[sid];
+        return { ...s, content: nextContent };
+      });
+    }
+    setSynthState("idle");
+    setSynthItems([]);
+    setSynthErrors([]);
+    autoSavedIdsRef.current = [];
+    streamedItemsRef.current = [];
+    flashNotice("Contenido generado revertido.");
   }
 
   const fields = activeSection?.structuredType ? dgGroups[activeSection.structuredType] : undefined;
@@ -278,6 +401,7 @@ export default function ChapterEditor({
   return (
     <div className="mx-auto grid max-w-[1400px] grid-cols-[260px_1fr] gap-4 px-6 py-4">
       <aside className="flex flex-col gap-3">
+        {sidebarTopExtras}
         <div className="flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-3">
           <button
             onClick={handleGenerate}
@@ -303,7 +427,11 @@ export default function ChapterEditor({
               {synthState === "synthesizing" ? (
                 <>
                   <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-                  Sintetizando…
+                  {synthProgress
+                    ? synthProgress.phase === 1
+                      ? `Secciones… ${synthProgress.done} / ${synthProgress.total}`
+                      : `Introducciones… ${synthProgress.done} / ${synthProgress.total}`
+                    : "Sintetizando…"}
                 </>
               ) : (
                 <>✨ Generar con IA</>
@@ -343,9 +471,11 @@ export default function ChapterEditor({
             content={state.content}
           />
         </nav>
+        {sidebarBottomExtras}
       </aside>
 
       <main className="flex flex-col gap-4">
+        {headerExtras}
         {warnings.length > 0 && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             <p className="mb-1 font-semibold">Advertencias del prellenado automático:</p>
@@ -390,13 +520,11 @@ export default function ChapterEditor({
         open={synthState === "previewing"}
         items={synthItems}
         errors={synthErrors}
-        onAcceptAll={() => acceptSynthesis(synthItems.map((i) => i.sectionId))}
-        onAcceptOne={(sid) => acceptSynthesis([sid])}
-        onCancel={() => {
-          setSynthState("idle");
-          setSynthItems([]);
-          setSynthErrors([]);
-        }}
+        autoApplied
+        onAcceptAll={acceptSynthesis}
+        onAcceptOne={() => { /* no-op: already applied */ }}
+        onCancel={acceptSynthesis}
+        onRevertAll={revertSynthesis}
       />
     </div>
   );

@@ -1,25 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import Cap1Editor from "@/components/cap1/Cap1Editor";
 import Cap2Editor from "@/components/cap2/Cap2Editor";
-import ChapterEditor from "@/components/dia/ChapterEditor";
+import Cap3Editor from "@/components/cap3/Cap3Editor";
+import Cap4Editor from "@/components/cap4/Cap4Editor";
+import Cap5Editor from "@/components/cap5/Cap5Editor";
+import Cap6Editor from "@/components/cap6/Cap6Editor";
+import Cap7Editor from "@/components/cap7/Cap7Editor";
 import DiaChapterHeader from "@/components/dia/DiaChapterHeader";
 import { deriveCap1Prefill } from "@/lib/dia/cap1/derive";
-import { DG_FIELDS as CAP1_DG_FIELDS, SECTIONS as CAP1_SECTIONS } from "@/lib/dia/cap1/fields";
 import { deriveCap2Prefill } from "@/lib/dia/cap2/derive";
 import { deriveCap3Prefill } from "@/lib/dia/cap3/derive";
-import { DG_FIELDS as CAP3_DG_FIELDS, SECTIONS as CAP3_SECTIONS } from "@/lib/dia/cap3/fields";
 import { deriveCap4Prefill } from "@/lib/dia/cap4/derive";
-import { DG_FIELDS as CAP4_DG_FIELDS, SECTIONS as CAP4_SECTIONS } from "@/lib/dia/cap4/fields";
 import { deriveCap5Prefill } from "@/lib/dia/cap5/derive";
-import { DG_FIELDS as CAP5_DG_FIELDS, SECTIONS as CAP5_SECTIONS } from "@/lib/dia/cap5/fields";
 import { deriveCap6Prefill } from "@/lib/dia/cap6/derive";
-import { DG_FIELDS as CAP6_DG_FIELDS, SECTIONS as CAP6_SECTIONS } from "@/lib/dia/cap6/fields";
-import { migrateCap6V1ToV2 } from "@/lib/dia/cap6/migration";
 import { deriveCap7Prefill } from "@/lib/dia/cap7/derive";
-import { DG_FIELDS as CAP7_DG_FIELDS, SECTIONS as CAP7_SECTIONS } from "@/lib/dia/cap7/fields";
 import { findChapter, isValidChapterId } from "@/lib/dia/chapters";
-import type { ChapterId } from "@/lib/dia/framework/manifest";
 import { componentGeomFromProjectFeaturesRpc } from "@/lib/supabase/project-features";
 import { PROJECT_SELECT_WITH_CLIENTE_FOR_DIA } from "@/lib/supabase/project-selects";
 import type {
@@ -45,66 +42,6 @@ interface DeriveInput {
   componentsGeom: readonly ComponentGeomFeature[];
   areaEstudio: AreaEstudioRow | null;
 }
-
-interface FrameworkChapterConfig {
-  derive: (input: DeriveInput) => {
-    state: { introFields: Record<string, string>; dgFields: Record<string, string>; content: Record<string, string> };
-    warnings: string[];
-  };
-  sections: typeof CAP1_SECTIONS;
-  dgGroups: typeof CAP1_DG_FIELDS;
-  initialActiveId: string;
-  initiallyOpenIds: readonly string[];
-  migrate?: (state: { introFields: Record<string, string>; dgFields: Record<string, string>; content: Record<string, string> }) => { introFields: Record<string, string>; dgFields: Record<string, string>; content: Record<string, string> };
-}
-
-// Caps 1, 3, 4, 5, 6, 7 use the generic ChapterEditor. Cap. 2 keeps its
-// bespoke editor below.
-const FRAMEWORK_CHAPTERS: Partial<Record<ChapterId, FrameworkChapterConfig>> = {
-  1: {
-    derive: deriveCap1Prefill,
-    sections: CAP1_SECTIONS,
-    dgGroups: CAP1_DG_FIELDS,
-    initialActiveId: "1.1",
-    initiallyOpenIds: ["1.0"],
-  },
-  3: {
-    derive: deriveCap3Prefill,
-    sections: CAP3_SECTIONS as unknown as typeof CAP1_SECTIONS,
-    dgGroups: CAP3_DG_FIELDS as unknown as typeof CAP1_DG_FIELDS,
-    initialActiveId: "3.1",
-    initiallyOpenIds: ["3.0", "3.2", "3.3", "3.4"],
-  },
-  4: {
-    derive: deriveCap4Prefill,
-    sections: CAP4_SECTIONS as unknown as typeof CAP1_SECTIONS,
-    dgGroups: CAP4_DG_FIELDS as unknown as typeof CAP1_DG_FIELDS,
-    initialActiveId: "4.1",
-    initiallyOpenIds: ["4.0"],
-  },
-  5: {
-    derive: deriveCap5Prefill,
-    sections: CAP5_SECTIONS as unknown as typeof CAP1_SECTIONS,
-    dgGroups: CAP5_DG_FIELDS as unknown as typeof CAP1_DG_FIELDS,
-    initialActiveId: "5.1",
-    initiallyOpenIds: ["5.0"],
-  },
-  6: {
-    derive: deriveCap6Prefill,
-    sections: CAP6_SECTIONS as unknown as typeof CAP1_SECTIONS,
-    dgGroups: CAP6_DG_FIELDS as unknown as typeof CAP1_DG_FIELDS,
-    initialActiveId: "6.0.0",
-    initiallyOpenIds: ["6.0", "6.2", "6.3"],
-    migrate: migrateCap6V1ToV2,
-  },
-  7: {
-    derive: deriveCap7Prefill,
-    sections: CAP7_SECTIONS as unknown as typeof CAP1_SECTIONS,
-    dgGroups: CAP7_DG_FIELDS as unknown as typeof CAP1_DG_FIELDS,
-    initialActiveId: "7.1",
-    initiallyOpenIds: ["7.0"],
-  },
-};
 
 export default async function DiaChapterPage({ params }: PageProps) {
   const { id, chapter } = await params;
@@ -163,42 +100,118 @@ export default async function DiaChapterPage({ params }: PageProps) {
     );
   }
 
-  // Cap. 2 keeps its bespoke editor (UTM zone selector + basin auto-detect)
-  if (entry.id === 2) {
-    const { state, warnings } = deriveCap2Prefill(deriveInput);
-    return (
-      <div className="min-h-screen bg-stone-50">
-        <DiaChapterHeader projectId={id} projectName={p.nombre_proyecto} title={entry.longTitle} />
-        <Cap2Editor
-          projectId={id}
-          projectName={p.nombre_proyecto}
-          prefill={state}
-          warnings={warnings}
-        />
-      </div>
-    );
-  }
-
-  const config = FRAMEWORK_CHAPTERS[entry.id];
-  if (!config) notFound();
-
-  const { state, warnings } = config.derive(deriveInput);
+  // Each chapter has its own bespoke editor that wraps the shared
+  // ChapterEditor and may add chapter-specific UI via slot props. Cap 2
+  // is fully bespoke (UTM zone selector + basin auto-detect); the others
+  // are thin wrappers today but own the file structure for future tweaks.
   return (
     <div className="min-h-screen bg-stone-50">
       <DiaChapterHeader projectId={id} projectName={p.nombre_proyecto} title={entry.longTitle} />
-      <ChapterEditor
-        chapterId={entry.id}
-        chapterTitle={entry.shortTitle}
-        projectId={id}
-        projectName={p.nombre_proyecto}
-        prefill={state}
-        warnings={warnings}
-        sections={config.sections}
-        dgGroups={config.dgGroups}
-        initialActiveId={config.initialActiveId}
-        initiallyOpenIds={config.initiallyOpenIds}
-        migrate={config.migrate}
-      />
+      {renderChapterEditor(entry.id, {
+        projectId: id,
+        projectName: p.nombre_proyecto,
+        chapterTitle: entry.shortTitle,
+        deriveInput,
+      })}
     </div>
   );
+}
+
+interface EditorRenderArgs {
+  projectId: string;
+  projectName: string;
+  chapterTitle: string;
+  deriveInput: DeriveInput;
+}
+
+function renderChapterEditor(
+  chapterId: 1 | 2 | 3 | 4 | 5 | 6 | 7,
+  args: EditorRenderArgs,
+): React.ReactNode {
+  const { projectId, projectName, chapterTitle, deriveInput } = args;
+  switch (chapterId) {
+    case 1: {
+      const { state, warnings } = deriveCap1Prefill(deriveInput);
+      return (
+        <Cap1Editor
+          projectId={projectId}
+          projectName={projectName}
+          chapterTitle={chapterTitle}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+    case 2: {
+      const { state, warnings } = deriveCap2Prefill(deriveInput);
+      return (
+        <Cap2Editor
+          projectId={projectId}
+          projectName={projectName}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+    case 3: {
+      const { state, warnings } = deriveCap3Prefill(deriveInput);
+      return (
+        <Cap3Editor
+          projectId={projectId}
+          projectName={projectName}
+          chapterTitle={chapterTitle}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+    case 4: {
+      const { state, warnings } = deriveCap4Prefill(deriveInput);
+      return (
+        <Cap4Editor
+          projectId={projectId}
+          projectName={projectName}
+          chapterTitle={chapterTitle}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+    case 5: {
+      const { state, warnings } = deriveCap5Prefill(deriveInput);
+      return (
+        <Cap5Editor
+          projectId={projectId}
+          projectName={projectName}
+          chapterTitle={chapterTitle}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+    case 6: {
+      const { state, warnings } = deriveCap6Prefill(deriveInput);
+      return (
+        <Cap6Editor
+          projectId={projectId}
+          projectName={projectName}
+          chapterTitle={chapterTitle}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+    case 7: {
+      const { state, warnings } = deriveCap7Prefill(deriveInput);
+      return (
+        <Cap7Editor
+          projectId={projectId}
+          projectName={projectName}
+          chapterTitle={chapterTitle}
+          prefill={state}
+          warnings={warnings}
+        />
+      );
+    }
+  }
 }

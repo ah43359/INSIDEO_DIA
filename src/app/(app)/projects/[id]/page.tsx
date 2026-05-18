@@ -15,10 +15,14 @@ import {
   type SamplingStationRow,
 } from "@/lib/types";
 import AreaEstudioPanel from "@/components/AreaEstudioPanel";
+import CampoPanel from "@/components/CampoPanel";
+import PresupuestoPanel from "@/components/PresupuestoPanel";
 import ProjectMap from "@/components/ProjectMap";
 import ProjectMapWithEditor from "@/components/ProjectMapWithEditor";
 import ReportesPanel from "@/components/ReportesPanel";
 import SamplingResultsPanel from "@/components/SamplingResultsPanel";
+import SocialBaselinePanel from "@/components/SocialBaselinePanel";
+import type { SocialBaselineRow } from "@/lib/inei/types";
 
 const TABS = [
   { id: "resumen", label: "Resumen" },
@@ -26,6 +30,8 @@ const TABS = [
   { id: "componentes", label: "Componentes" },
   { id: "areas", label: "Áreas" },
   { id: "linea_base", label: "Línea base" },
+  { id: "campo", label: "Campo" },
+  { id: "presupuesto", label: "Presupuesto" },
   { id: "documentos", label: "Documentos" },
 ] as const;
 
@@ -68,6 +74,12 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: concesionesRows, error: concesionesError },
     { data: contoursRows, error: contoursError },
     { data: peruBoundaryRows, error: peruBoundaryError },
+    { data: departamentosRows, error: departamentosError },
+    { data: provinciasRows, error: provinciasError },
+    { data: distritosRows, error: distritosError },
+    { data: comunidadesRows, error: comunidadesError },
+    { data: viasRows, error: viasError },
+    { data: socialBaselineRows },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -99,11 +111,16 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_vegetation_for_project", { p_project_id: id }),
     supabase.rpc("get_area_efectiva_for_project", {
       p_project_id: id,
-      p_buffer_m: 100,
     }),
     supabase.rpc("get_all_concesiones", { p_project_id: id }),
     supabase.rpc("get_contours_for_project", { p_project_id: id, p_buffer_m: 2000 }),
     supabase.rpc("get_peru_boundary"),
+    supabase.rpc("get_departamentos_for_project", { p_project_id: id }),
+    supabase.rpc("get_provincias_for_project", { p_project_id: id }),
+    supabase.rpc("get_distritos_for_project", { p_project_id: id }),
+    supabase.rpc("get_comunidades_for_project", { p_project_id: id }),
+    supabase.rpc("get_vias_for_project", { p_project_id: id }),
+    supabase.rpc("get_social_baseline_for_project", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -259,6 +276,100 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     })),
   };
 
+  // Departamentos / Provincias / Distritos — INEI 2023, filtered to the
+  // project's region of interest (area_estudio ∪ area_efectiva ∪ components-bbox).
+  interface BoundaryRow {
+    id: number;
+    codigo?: string;
+    ubigeo?: string;
+    nombre: string;
+    geom_geojson: string;
+  }
+  function boundariesToFc(
+    rows: BoundaryRow[] | null,
+    codeField: "codigo" | "ubigeo",
+  ): GeoJSON.FeatureCollection {
+    return {
+      type: "FeatureCollection",
+      features: (rows ?? []).map((r) => ({
+        type: "Feature",
+        id: r.id,
+        geometry: JSON.parse(r.geom_geojson) as GeoJSON.Geometry,
+        properties: { [codeField]: r[codeField], nombre: r.nombre },
+      })),
+    };
+  }
+  const departamentosFc = boundariesToFc(
+    (departamentosRows ?? null) as BoundaryRow[] | null,
+    "codigo",
+  );
+  const provinciasFc = boundariesToFc(
+    (provinciasRows ?? null) as BoundaryRow[] | null,
+    "codigo",
+  );
+  const distritosFc = boundariesToFc(
+    (distritosRows ?? null) as BoundaryRow[] | null,
+    "ubigeo",
+  );
+
+  // Comunidades campesinas — polygons that overlap the project region.
+  interface ComunidadRow {
+    id: number;
+    nombre: string;
+    departamento: string | null;
+    provincia: string | null;
+    distrito: string | null;
+    estado: string | null;
+    area_ha: number | null;
+    geom_geojson: string;
+  }
+  const comunidadesFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: ((comunidadesRows ?? []) as ComunidadRow[]).map((c) => ({
+      type: "Feature",
+      id: c.id,
+      geometry: JSON.parse(c.geom_geojson) as GeoJSON.Geometry,
+      properties: {
+        nombre: c.nombre,
+        estado: c.estado,
+        departamento: c.departamento,
+        provincia: c.provincia,
+        distrito: c.distrito,
+        area_ha: c.area_ha,
+      },
+    })),
+  };
+
+  // Red vial MTC — Nacional / Departamental / Vecinal segments.
+  interface ViaRow {
+    id: number;
+    codruta: string | null;
+    nombre: string | null;
+    jerarquia: string | null;
+    jerarquia_long: string | null;
+    superficie: string | null;
+    estado: string | null;
+    longitud_km: number | null;
+    geom_geojson: string;
+  }
+  const viasFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: ((viasRows ?? []) as ViaRow[]).map((v) => ({
+      type: "Feature",
+      id: v.id,
+      geometry: JSON.parse(v.geom_geojson) as GeoJSON.Geometry,
+      properties: {
+        codruta: v.codruta,
+        nombre: v.nombre,
+        jerarquia: v.jerarquia,
+        jerarquia_long: v.jerarquia_long,
+        superficie: v.superficie,
+        estado: v.estado,
+        longitud_km: v.longitud_km,
+      },
+    })),
+  };
+
   // Peru country outline (low-zoom reference layer).
   interface PeruBoundaryRow {
     id: number;
@@ -401,7 +512,11 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
       {/* ── TAB CONTENT ──────────────────────────────────────────────── */}
       <div className="px-8 py-6">
-        {activeTab === "resumen" ? (
+        {activeTab === "campo" ? (
+          <CampoPanel projectId={id} projectName={p.nombre_proyecto} />
+        ) : activeTab === "presupuesto" ? (
+          <PresupuestoPanel projectId={id} />
+        ) : activeTab === "resumen" ? (
           <ResumenTab
             p={p}
             id={id}
@@ -419,6 +534,11 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             concesionesFc={concesionesFc}
             contoursFc={contoursFc}
             peruBoundaryFeature={peruBoundaryFeature}
+            departamentosFc={departamentosFc}
+            provinciasFc={provinciasFc}
+            distritosFc={distritosFc}
+            comunidadesFc={comunidadesFc}
+            viasFc={viasFc}
             microcuencasError={microcuencasError}
             areaError={areaError}
             areaEfectivaError={areaEfectivaError}
@@ -429,6 +549,11 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             concesionesError={concesionesError}
             contoursError={contoursError}
             peruBoundaryError={peruBoundaryError}
+            departamentosError={departamentosError}
+            provinciasError={provinciasError}
+            distritosError={distritosError}
+            comunidadesError={comunidadesError}
+            viasError={viasError}
             microcuencas={microcuencas}
             receptores={receptores}
             stations={stations}
@@ -437,6 +562,18 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             grouped={grouped}
             subs={subs}
             resumenV2={resumenV2}
+          />
+        ) : activeTab === "linea_base" ? (
+          <SocialBaselinePanel
+            projectId={id}
+            initial={((socialBaselineRows ?? []) as SocialBaselineRow[])[0] ?? null}
+            resolvedUbigeo={
+              ((socialBaselineRows ?? []) as SocialBaselineRow[])[0]
+                ?.resolved_ubigeo ?? null
+            }
+            distrito={p.distrito}
+            provincia={p.provincia}
+            region={p.region}
           />
         ) : (
           <EmptyTab tab={activeTab} />
@@ -473,6 +610,11 @@ function ResumenTab({
   concesionesFc,
   contoursFc,
   peruBoundaryFeature,
+  departamentosFc,
+  provinciasFc,
+  distritosFc,
+  comunidadesFc,
+  viasFc,
   microcuencasError,
   areaError,
   areaEfectivaError,
@@ -483,6 +625,11 @@ function ResumenTab({
   concesionesError,
   contoursError,
   peruBoundaryError,
+  departamentosError,
+  provinciasError,
+  distritosError,
+  comunidadesError,
+  viasError,
   microcuencas,
   receptores,
   stations,
@@ -508,6 +655,11 @@ function ResumenTab({
   concesionesFc: GeoJSON.FeatureCollection;
   contoursFc: GeoJSON.FeatureCollection;
   peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  departamentosFc: GeoJSON.FeatureCollection;
+  provinciasFc: GeoJSON.FeatureCollection;
+  distritosFc: GeoJSON.FeatureCollection;
+  comunidadesFc: GeoJSON.FeatureCollection;
+  viasFc: GeoJSON.FeatureCollection;
   microcuencasError: { message: string } | null;
   areaError: { message: string } | null;
   areaEfectivaError: { message: string } | null;
@@ -518,6 +670,11 @@ function ResumenTab({
   concesionesError: { message: string } | null;
   contoursError: { message: string } | null;
   peruBoundaryError: { message: string } | null;
+  departamentosError: { message: string } | null;
+  provinciasError: { message: string } | null;
+  distritosError: { message: string } | null;
+  comunidadesError: { message: string } | null;
+  viasError: { message: string } | null;
   microcuencas: MicrocuencaRow[];
   receptores: CentroPobladoRow[];
   stations: SamplingStationRow[];
@@ -538,6 +695,11 @@ function ResumenTab({
     concesionesError?.message ??
     contoursError?.message ??
     peruBoundaryError?.message ??
+    departamentosError?.message ??
+    provinciasError?.message ??
+    distritosError?.message ??
+    comunidadesError?.message ??
+    viasError?.message ??
     null;
 
   return (
@@ -590,6 +752,11 @@ function ResumenTab({
             concesionesFc={concesionesFc}
             contoursFc={contoursFc}
             peruBoundaryFeature={peruBoundaryFeature}
+            departamentosFc={departamentosFc}
+            provinciasFc={provinciasFc}
+            distritosFc={distritosFc}
+            comunidadesFc={comunidadesFc}
+            viasFc={viasFc}
             vegetation={vegetation}
             layerError={layerError}
           />
@@ -617,6 +784,11 @@ function ResumenTab({
                 concesiones={concesionesFc}
                 contours={contoursFc}
                 peruBoundary={peruBoundaryFeature}
+                departamentos={departamentosFc}
+                provincias={provinciasFc}
+                distritos={distritosFc}
+                comunidades={comunidadesFc}
+                vias={viasFc}
               />
             </div>
           )}
@@ -883,6 +1055,11 @@ function MapWithLeyenda({
   concesionesFc,
   contoursFc,
   peruBoundaryFeature,
+  departamentosFc,
+  provinciasFc,
+  distritosFc,
+  comunidadesFc,
+  viasFc,
   vegetation,
   layerError,
 }: {
@@ -901,6 +1078,11 @@ function MapWithLeyenda({
   concesionesFc: GeoJSON.FeatureCollection;
   contoursFc: GeoJSON.FeatureCollection;
   peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  departamentosFc: GeoJSON.FeatureCollection;
+  provinciasFc: GeoJSON.FeatureCollection;
+  distritosFc: GeoJSON.FeatureCollection;
+  comunidadesFc: GeoJSON.FeatureCollection;
+  viasFc: GeoJSON.FeatureCollection;
   vegetation: VegetationZone[];
   layerError: string | null;
 }) {
@@ -953,6 +1135,11 @@ function MapWithLeyenda({
               concesiones={concesionesFc}
               contours={contoursFc}
               peruBoundary={peruBoundaryFeature}
+              departamentos={departamentosFc}
+              provincias={provinciasFc}
+              distritos={distritosFc}
+              comunidades={comunidadesFc}
+              vias={viasFc}
             />
           )}
           {layerError && (

@@ -10,9 +10,13 @@ import {
 } from "@/lib/monitoreo/eca-registry";
 import {
   computeCompleteness,
+  computeRequiredCompleteness,
+  factorReadiness,
   getActiveParams,
+  missingAlwaysRequiredFactors,
   summarizeExceedances,
   type ExceedanceItem,
+  type FactorReadiness,
 } from "@/lib/monitoreo/factor-checks";
 import FactorOverviewCard from "./_components/FactorOverviewCard";
 import MonitoreoHeader from "./_components/MonitoreoHeader";
@@ -20,6 +24,7 @@ import FactorTabs from "./_components/FactorTabs";
 import Pill from "./_components/Pill";
 import DistributionBar from "./_components/DistributionBar";
 import { InfoCard, DefList } from "./_components/InfoCard";
+import RequiredFactorsBanner from "./_components/RequiredFactorsBanner";
 
 type MeasurementCampaign = "linea_base" | "construccion" | "operacion" | "cierre";
 
@@ -100,6 +105,9 @@ export default function MonitoreoHubPage() {
     paramsCount: number;
     filled: number;
     total: number;
+    requiredFilled: number;
+    requiredTotal: number;
+    readiness: FactorReadiness;
     exceedances: ExceedanceItem[];
   };
   const perFactor = useMemo(() => {
@@ -125,6 +133,17 @@ export default function MonitoreoHubPage() {
         stationCodes,
         results,
       });
+      const requiredStats = computeRequiredCompleteness({
+        factor: f.id,
+        stationCodes,
+        results,
+      });
+      const readiness = factorReadiness({
+        factor: f.id,
+        stationsCount: factorStations.length,
+        stationCodes,
+        results,
+      });
       const exceedances = summarizeExceedances({
         factor: f.id,
         stationCodes,
@@ -136,11 +155,20 @@ export default function MonitoreoHubPage() {
         paramsCount: activeParams.length,
         filled: completeness.filled,
         total: completeness.total,
+        requiredFilled: requiredStats.filled,
+        requiredTotal: requiredStats.total,
+        readiness,
         exceedances,
       });
     }
     return out;
   }, [stations, measurements]);
+
+  // Factors required="always" with 0 stations — surfaced in the top banner.
+  const missingRequired = useMemo(
+    () => missingAlwaysRequiredFactors(perFactor),
+    [perFactor],
+  );
 
   const totals = useMemo(() => {
     let stationsCount = 0;
@@ -148,14 +176,29 @@ export default function MonitoreoHubPage() {
     let total = 0;
     let exceedances = 0;
     let factorsWithData = 0;
-    for (const [, s] of perFactor) {
+    let requiredAlwaysCount = 0;
+    let requiredAlwaysReady = 0;
+    for (const [factorId, s] of perFactor) {
       stationsCount += s.stationsCount;
       filled += s.filled;
       total += s.total;
       exceedances += s.exceedances.length;
       if (s.stationsCount > 0) factorsWithData += 1;
+      const def = FACTOR_DEFS.find((f) => f.id === factorId);
+      if (def?.required === "always") {
+        requiredAlwaysCount += 1;
+        if (s.readiness === "complete") requiredAlwaysReady += 1;
+      }
     }
-    return { stationsCount, filled, total, exceedances, factorsWithData };
+    return {
+      stationsCount,
+      filled,
+      total,
+      exceedances,
+      factorsWithData,
+      requiredAlwaysCount,
+      requiredAlwaysReady,
+    };
   }, [perFactor]);
 
   const factorBadges: Partial<Record<FactorKind, number>> = {};
@@ -226,6 +269,18 @@ export default function MonitoreoHubPage() {
               {totals.stationsCount} estaciones
             </Pill>
             <Pill
+              icon="✅"
+              tone={
+                totals.requiredAlwaysReady === totals.requiredAlwaysCount
+                  ? "ok"
+                  : totals.requiredAlwaysReady > 0
+                  ? "warn"
+                  : "danger"
+              }
+            >
+              Requeridos {totals.requiredAlwaysReady}/{totals.requiredAlwaysCount}
+            </Pill>
+            <Pill
               icon="📈"
               tone={completitudPct >= 80 ? "ok" : completitudPct >= 40 ? "warn" : "neutral"}
             >
@@ -249,6 +304,9 @@ export default function MonitoreoHubPage() {
         campaign={campaign}
         badges={factorBadges}
       />
+
+      {/* Missing-required-factors callout for Cap 3 baseline */}
+      <RequiredFactorsBanner projectId={projectId} missingFactors={missingRequired} />
 
       {/* Campaign selector */}
       <div className="flex items-center gap-3">
@@ -378,13 +436,18 @@ export default function MonitoreoHubPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {FACTOR_DEFS.map((f) => {
-              const stats = perFactor.get(f.id) ?? {
-                stationsCount: 0,
-                paramsCount: 0,
-                filled: 0,
-                total: 0,
-                exceedances: [],
-              };
+              const stats =
+                perFactor.get(f.id) ??
+                ({
+                  stationsCount: 0,
+                  paramsCount: 0,
+                  filled: 0,
+                  total: 0,
+                  requiredFilled: 0,
+                  requiredTotal: 0,
+                  readiness: "not_required",
+                  exceedances: [],
+                } as Stats);
               return (
                 <FactorOverviewCard
                   key={f.id}
@@ -395,6 +458,9 @@ export default function MonitoreoHubPage() {
                   filled={stats.filled}
                   total={stats.total}
                   exceedances={stats.exceedances.length}
+                  requiredFilled={stats.requiredFilled}
+                  requiredTotal={stats.requiredTotal}
+                  readiness={stats.readiness}
                   campaign={campaign}
                 />
               );

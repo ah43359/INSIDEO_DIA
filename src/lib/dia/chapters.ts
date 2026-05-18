@@ -5,8 +5,10 @@
 // /projects/[id]/dia/[chapter] reads this to decide whether to render a
 // real editor or a "no implementado aún" placeholder.
 
-import type { ChapterId } from "./framework/manifest";
+import type { ChapterId, SectionNode } from "./framework/manifest";
 import { CHAPTER_TITLES } from "./framework/manifest";
+import { SECTIONS as CAP2_SECTIONS } from "./cap2/fields";
+import { SECTIONS as CAP6_SECTIONS } from "./cap6/fields";
 
 export type ChapterStatus = "editable" | "planned";
 
@@ -59,4 +61,12 @@ export function findChapter(id: number): ChapterRegistryEntry | null {
 
 export function isValidChapterId(value: number): value is ChapterId {
   return value >= 1 && value <= 7 && Number.isInteger(value);
+}
+
+/** Returns the section tree for chapters that support RAG synthesis.
+ *  Used by the synthesis route to walk parent nodes for phase-2 intro generation. */
+export function getChapterSections(chapterNum: number): readonly SectionNode[] | null {
+  if (chapterNum === 2) return CAP2_SECTIONS;
+  if (chapterNum === 6) return CAP6_SECTIONS;
+  return null;
 }

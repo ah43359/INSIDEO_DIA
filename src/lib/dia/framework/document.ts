@@ -3,6 +3,13 @@
 // Each chapter contributes a `Paragraph[]` body via its own builder; this
 // module wraps that body in a `Document` with consistent fonts, headings,
 // numbering, headers, and footers so all chapters look the same.
+//
+// Follows INSIDEO Word document standard (extracted from approved DIA examples):
+//   Body: Bookman Old Style 10pt, justified, 1.3× spacing.
+//   Headings: Arial bold, 12pt (H1) / 11pt (H2–H4), black, with indent.
+//   A4 page, left 3 cm, top/bottom/right 2.5 cm.
+//   Header: right-aligned italic label + project name.
+//   Footer: centered "Capítulo N – Página X".
 
 import {
   AlignmentType,
@@ -17,10 +24,18 @@ import {
 } from "docx";
 import {
   BULLET_NUMBERING,
-  COLOR_H1,
-  COLOR_H2,
   COLOR_MUTED,
   FONT,
+  FONT_HEADING,
+  HEADING_INDENT,
+  HEADING_SPACING,
+  MARGIN_LEFT,
+  MARGIN_RIGHT,
+  MARGIN_TOP_BOTTOM,
+  SIZE_H1,
+  SIZE_H2,
+  SIZE_H3,
+  SIZE_H4,
   SIZE_HEADER_FOOTER,
 } from "./styles";
 
@@ -50,8 +65,8 @@ export async function buildChapterDocumentBuffer(input: ChapterDocumentInput): P
           basedOn: "Normal",
           next: "Normal",
           quickFormat: true,
-          run: { size: 28, bold: true, font: FONT, color: COLOR_H1 },
-          paragraph: { spacing: { before: 360, after: 120 }, outlineLevel: 0 },
+          run: { size: SIZE_H1, bold: true, font: FONT_HEADING },
+          paragraph: { spacing: HEADING_SPACING[1], indent: HEADING_INDENT[1], outlineLevel: 0 },
         },
         {
           id: "Heading2",
@@ -59,8 +74,8 @@ export async function buildChapterDocumentBuffer(input: ChapterDocumentInput): P
           basedOn: "Normal",
           next: "Normal",
           quickFormat: true,
-          run: { size: 24, bold: true, font: FONT, color: COLOR_H2 },
-          paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 1 },
+          run: { size: SIZE_H2, bold: true, font: FONT_HEADING },
+          paragraph: { spacing: HEADING_SPACING[2], indent: HEADING_INDENT[2], outlineLevel: 1 },
         },
         {
           id: "Heading3",
@@ -68,8 +83,17 @@ export async function buildChapterDocumentBuffer(input: ChapterDocumentInput): P
           basedOn: "Normal",
           next: "Normal",
           quickFormat: true,
-          run: { size: 22, bold: true, font: FONT },
-          paragraph: { spacing: { before: 180, after: 60 }, outlineLevel: 2 },
+          run: { size: SIZE_H3, bold: true, font: FONT_HEADING },
+          paragraph: { spacing: HEADING_SPACING[3], indent: HEADING_INDENT[3], outlineLevel: 2 },
+        },
+        {
+          id: "Heading4",
+          name: "Heading 4",
+          basedOn: "Normal",
+          next: "Normal",
+          quickFormat: true,
+          run: { size: SIZE_H4, bold: true, font: FONT_HEADING },
+          paragraph: { spacing: HEADING_SPACING[4], indent: HEADING_INDENT[4], outlineLevel: 3 },
         },
       ],
     },
@@ -78,8 +102,13 @@ export async function buildChapterDocumentBuffer(input: ChapterDocumentInput): P
       {
         properties: {
           page: {
-            size: { width: 11906, height: 16838 },
-            margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+            size: { width: 11906, height: 16838 }, // A4 in twips
+            margin: {
+              top: MARGIN_TOP_BOTTOM,
+              bottom: MARGIN_TOP_BOTTOM,
+              left: MARGIN_LEFT,
+              right: MARGIN_RIGHT,
+            },
           },
         },
         headers: {

@@ -218,26 +218,118 @@ export type FactorKind =
   | "vida_acuatica"
   | "rni";
 
+/**
+ * Whether a factor must be measured for every Cap 3 baseline.
+ *
+ * - `always` — every mining-exploration DIA needs this. Block Cap 3 export
+ *   until at least one station + measurements exist.
+ * - `conditional` — required only when project conditions apply (e.g.
+ *   sedimentos/vida_acuática only if water bodies in AOI; vibraciones only
+ *   for projects with blasting; rni for transmission lines).
+ * - `optional` — never required by default; the consultant adds it if they
+ *   designed the LB to include it.
+ */
+export type FactorRequired = "always" | "conditional" | "optional";
+
 export interface FactorDef {
   id: FactorKind;
   label: string;
   section: string;       // e.g. "3.3.6"
   sectionTitle: string;   // e.g. "Calidad de Aire"
   decree: string;
+  required: FactorRequired;
+  /**
+   * Minimum parameter set the user must provide for this factor. Used by the
+   * "required completeness" check on each station card. Subset of the params
+   * marked `on: true` in the per-factor arrays above.
+   *
+   * Empty array for taxonomic factors (flora / fauna / vida_acuática) — those
+   * are inventoried, not measured numerically, so completeness is checked by
+   * "any record exists" instead.
+   */
+  minParameters: readonly string[];
 }
 
 export const FACTOR_DEFS: FactorDef[] = [
-  { id: "aire",               label: "Aire",               section: "3.3.6",    sectionTitle: "CALIDAD DE AIRE",                      decree: "D.S. N° 003-2017-MINAM" },
-  { id: "agua_superficial",    label: "Agua Superficial",    section: "3.3.9",    sectionTitle: "CALIDAD DEL AGUA SUPERFICIAL",         decree: "D.S. N° 004-2017-MINAM" },
-  { id: "agua_subterranea",    label: "Agua Subterránea",   section: "3.3.10",   sectionTitle: "CALIDAD DEL AGUA SUBTERRÁNEA",         decree: "D.S. N° 004-2017-MINAM" },
-  { id: "ruido",               label: "Ruido",               section: "3.3.7",    sectionTitle: "NIVELES DE RUIDO AMBIENTAL",           decree: "D.S. N° 085-2003-PCM" },
-  { id: "suelos",              label: "Calidad de Suelos",    section: "3.3.5.6",  sectionTitle: "ANÁLISIS DE CALIDAD DE SUELO",         decree: "D.S. N° 011-2017-MINAM" },
-  { id: "sedimentos",          label: "Sedimentos",          section: "3.3.5.7",  sectionTitle: "CALIDAD DE SEDIMENTOS",               decree: "D.S. N° 011-2017-MINAM (ref.)" },
-  { id: "vibraciones",         label: "Vibraciones",         section: "3.3.8",    sectionTitle: "VIBRACIONES",                          decree: "NTP 27006 / ISO 4866" },
-  { id: "flora",               label: "Flora",               section: "3.3.1",    sectionTitle: "FLORA",                                 decree: "Guías MINAM / D.S. 043-2006-AG (cat.)" },
-  { id: "fauna",               label: "Fauna",               section: "3.3.2",    sectionTitle: "FAUNA",                                 decree: "Guías MINAM / D.S. 043-2006-AG (cat.)" },
-  { id: "vida_acuatica",       label: "Vida Acuática",       section: "3.2.9",    sectionTitle: "VIDA ACUÁTICA",                         decree: "Según diseño de LB (macroinvertebrados, perifiton, etc.)" },
-  { id: "rni",                 label: "RNI",                 section: "3.2.2",    sectionTitle: "RADIACIÓN NO IONIZANTE (RNI)",          decree: "Según instrumento / guía aplicable" },
+  {
+    id: "aire", label: "Aire", section: "3.3.6",
+    sectionTitle: "CALIDAD DE AIRE",
+    decree: "D.S. N° 003-2017-MINAM",
+    required: "always",
+    minParameters: ["PM10", "PM2.5", "SO2", "NO2", "CO"],
+  },
+  {
+    id: "agua_superficial", label: "Agua Superficial", section: "3.3.9",
+    sectionTitle: "CALIDAD DEL AGUA SUPERFICIAL",
+    decree: "D.S. N° 004-2017-MINAM",
+    required: "always",
+    // pH + OD + CE + DBO5 + heavy metals at minimum
+    minParameters: ["pH", "OD", "CE", "DBO5", "As", "Cd", "Pb", "ColTerm"],
+  },
+  {
+    id: "agua_subterranea", label: "Agua Subterránea", section: "3.3.10",
+    sectionTitle: "CALIDAD DEL AGUA SUBTERRÁNEA",
+    decree: "D.S. N° 004-2017-MINAM",
+    required: "always",
+    minParameters: ["pH", "OD", "CE", "As", "ColTerm"],
+  },
+  {
+    id: "ruido", label: "Ruido", section: "3.3.7",
+    sectionTitle: "NIVELES DE RUIDO AMBIENTAL",
+    decree: "D.S. N° 085-2003-PCM",
+    required: "always",
+    minParameters: ["LAeq_diurno", "LAeq_nocturno"],
+  },
+  {
+    id: "suelos", label: "Calidad de Suelos", section: "3.3.5.6",
+    sectionTitle: "ANÁLISIS DE CALIDAD DE SUELO",
+    decree: "D.S. N° 011-2017-MINAM",
+    required: "always",
+    // HC fractions + main heavy metals
+    minParameters: ["HC_F1", "HC_F2", "HC_F3", "As", "Cd", "Hg", "Pb"],
+  },
+  {
+    id: "sedimentos", label: "Sedimentos", section: "3.3.5.7",
+    sectionTitle: "CALIDAD DE SEDIMENTOS",
+    decree: "D.S. N° 011-2017-MINAM (ref.)",
+    required: "conditional",  // only if surface water bodies in AOI
+    minParameters: ["MO"],
+  },
+  {
+    id: "vibraciones", label: "Vibraciones", section: "3.3.8",
+    sectionTitle: "VIBRACIONES",
+    decree: "NTP 27006 / ISO 4866",
+    required: "conditional",  // only for blasting / drilling-with-explosives
+    minParameters: [],
+  },
+  {
+    id: "flora", label: "Flora", section: "3.3.1",
+    sectionTitle: "FLORA",
+    decree: "Guías MINAM / D.S. 043-2006-AG (cat.)",
+    required: "always",
+    minParameters: [],  // taxonomic — checked by "any record exists"
+  },
+  {
+    id: "fauna", label: "Fauna", section: "3.3.2",
+    sectionTitle: "FAUNA",
+    decree: "Guías MINAM / D.S. 043-2006-AG (cat.)",
+    required: "always",
+    minParameters: [],  // taxonomic
+  },
+  {
+    id: "vida_acuatica", label: "Vida Acuática", section: "3.2.9",
+    sectionTitle: "VIDA ACUÁTICA",
+    decree: "Según diseño de LB (macroinvertebrados, perifiton, etc.)",
+    required: "conditional",  // only if water bodies
+    minParameters: [],
+  },
+  {
+    id: "rni", label: "RNI", section: "3.2.2",
+    sectionTitle: "RADIACIÓN NO IONIZANTE (RNI)",
+    decree: "Según instrumento / guía aplicable",
+    required: "optional",
+    minParameters: [],
+  },
 ];
 
 export const FACTOR_DEFS_MAP: Record<FactorKind, FactorDef> =

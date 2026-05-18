@@ -29,6 +29,13 @@ interface Cap2EditorProps {
 }
 
 type GenerateState = "idle" | "generating" | "error";
+type SynthState = "idle" | "synthesizing" | "error";
+
+interface SynthLeafTarget {
+  sectionId: string;
+  sectionTitle: string;
+  userFields: Record<string, string>;
+}
 
 function storageKey(projectId: string): string {
   return `cap2:${projectId}`;
@@ -60,12 +67,15 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
   const [activeId, setActiveId] = useState<string>("2.1");
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(["2.0", "2.2", "2.8"]));
   const [generate, setGenerate] = useState<GenerateState>("idle");
+  const [synthState, setSynthState] = useState<SynthState>("idle");
+  const [synthProgress, setSynthProgress] = useState<{ phase: 1 | 2; done: number; total: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Hydrate from localStorage on mount (overlays the SSR prefill)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only available after mount.
     setState(loadState(projectId, prefill));
     setHydrated(true);
   }, [projectId, prefill]);
@@ -138,6 +148,94 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
     ev.target.value = "";
   }
 
+  /** Walk the Cap 2 section tree and collect every leaf + its filled DG fields. */
+  function leavesToSynthesize(): SynthLeafTarget[] {
+    const out: SynthLeafTarget[] = [];
+    function walk(nodes: readonly SectionNode[]): void {
+      for (const node of nodes) {
+        if (node.children.length === 0) {
+          const userFields: Record<string, string> = {};
+          if (node.structuredType) {
+            const fs = DG_FIELDS[node.structuredType as DgGroupKey];
+            if (fs) {
+              for (const f of fs) {
+                const v = state.dgFields[f.key];
+                if (v && v.trim()) userFields[f.key] = v;
+              }
+            }
+          }
+          out.push({ sectionId: node.id, sectionTitle: node.title, userFields });
+        } else {
+          walk(node.children);
+        }
+      }
+    }
+    walk(SECTIONS);
+    return out.slice(0, 80); // API cap
+  }
+
+  async function handleSynthesize(): Promise<void> {
+    const targets = leavesToSynthesize();
+    setSynthState("synthesizing");
+    setSynthProgress({ phase: 1, done: 0, total: targets.length });
+    setErrorMsg(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/dia/2/synthesize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sections: targets }),
+      });
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        const detail =
+          (errBody as { error?: string; detail?: string }).error ??
+          (errBody as { error?: string; detail?: string }).detail ??
+          `Error ${response.status}`;
+        throw new Error(detail);
+      }
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line) as Record<string, unknown>;
+          if (msg.type === "start") {
+            setSynthProgress({ phase: 1, done: 0, total: msg.totalLeaves as number });
+          } else if (msg.type === "section") {
+            // Auto-save each section to state.content as it streams in
+            const sectionId = msg.sectionId as string;
+            const content = msg.content as string;
+            setContent(sectionId, content);
+          } else if (msg.type === "progress") {
+            setSynthProgress({
+              phase: msg.phase as 1 | 2,
+              done: msg.done as number,
+              total: msg.total as number,
+            });
+          } else if (msg.type === "phase2_start") {
+            setSynthProgress({ phase: 2, done: 0, total: msg.totalParents as number });
+          } else if (msg.type === "error") {
+            throw new Error(msg.message as string);
+          }
+        }
+      }
+      setSynthState("idle");
+      setSynthProgress(null);
+      flashNotice("Contenido generado con IA");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Error desconocido al generar con IA");
+      setSynthState("error");
+      setSynthProgress(null);
+    }
+  }
+
   async function handleGenerate(): Promise<void> {
     setGenerate("generating");
     setErrorMsg(null);
@@ -188,6 +286,25 @@ export default function Cap2Editor({ projectId, projectName, prefill, warnings }
               </>
             ) : (
               "Generar Word"
+            )}
+          </button>
+          <button
+            onClick={handleSynthesize}
+            disabled={synthState === "synthesizing"}
+            className="flex items-center justify-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+            title="Rellena las secciones vacías usando ejemplos aprobados de DIAs anteriores"
+          >
+            {synthState === "synthesizing" ? (
+              <>
+                <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                {synthProgress
+                  ? synthProgress.phase === 1
+                    ? `Secciones… ${synthProgress.done} / ${synthProgress.total}`
+                    : `Introducciones… ${synthProgress.done} / ${synthProgress.total}`
+                  : "Sintetizando…"}
+              </>
+            ) : (
+              <>✨ Generar con IA</>
             )}
           </button>
           <div className="flex gap-2">

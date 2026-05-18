@@ -98,6 +98,7 @@ const LAYER_GROUPS = {
   // Political boundaries
   departments:  ["departamentos-fill", "departamentos-line"],
   provinces:    ["provincias-fill", "provincias-line"],
+  comunidades:  ["comunidades-fill", "comunidades-line", "comunidades-label"],
   districts:    ["distritos-fill", "distritos-line"],
   // Roads
   roads:        ["roads-line"],
@@ -137,6 +138,16 @@ interface ProjectMapProps {
   contours?: GeoJSON.FeatureCollection | null;
   /** Peru country outline (low-zoom reference). Optional. */
   peruBoundary?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
+  /** Departamentos that intersect the project's region (INEI 2023). Optional. */
+  departamentos?: GeoJSON.FeatureCollection | null;
+  /** Provincias that intersect the project's region (INEI 2023). Optional. */
+  provincias?: GeoJSON.FeatureCollection | null;
+  /** Distritos that intersect the project's region (INEI 2023). Optional. */
+  distritos?: GeoJSON.FeatureCollection | null;
+  /** Comunidades Campesinas that intersect the project's region. Optional. */
+  comunidades?: GeoJSON.FeatureCollection | null;
+  /** MTC Red Vial road segments that intersect the project's region. Optional. */
+  vias?: GeoJSON.FeatureCollection | null;
   /** Active when the user is editing área efectiva vertices on the map. */
   editingAreaEfectiva?: boolean;
   /** Fires whenever the edited polygon changes (drag/insert/delete). */
@@ -266,6 +277,11 @@ export default function ProjectMap({
   concesiones,
   contours,
   peruBoundary,
+  departamentos,
+  provincias,
+  distritos,
+  comunidades,
+  vias,
   editingAreaEfectiva = false,
   onAreaEfectivaGeomChange,
   areaEfectivaEditorResetKey = 0,
@@ -289,6 +305,7 @@ export default function ProjectMap({
     departments: true,
     provinces: true,
     districts: true,
+    comunidades: true,
     roads: true,
     concesiones: true,
     // Contours hidden by default — they add a lot of ink and most users
@@ -301,58 +318,18 @@ export default function ProjectMap({
   // Vegetation classes: each class togglable independently.
   const [vegClassVisible, setVegClassVisible] = useState<Record<string, boolean>>({});
 
-  // Client-side loaded boundaries from public/data/
-  const [boundaryData, setBoundaryData] = useState<{
-    departamentos: GeoJSON.FeatureCollection | null;
-    provincias: GeoJSON.FeatureCollection | null;
-    distritos: GeoJSON.FeatureCollection | null;
-  }>({
-    departamentos: null,
-    provincias: null,
-    distritos: null,
-  });
-
-  const BOUNDARY_URLS = {
-    departamentos: "/data/inei_departamentos_2023.geojson",
-    provincias: "/data/inei_provincias_2023.geojson",
-    distritos: "/data/inei_distritos_2023.geojson",
-  };
-
-  useEffect(() => {
-    const loadBoundaries = async () => {
-      try {
-        const [deptRes, provRes, distRes] = await Promise.all([
-          fetch(BOUNDARY_URLS.departamentos),
-          fetch(BOUNDARY_URLS.provincias),
-          fetch(BOUNDARY_URLS.distritos),
-        ]);
-        
-        const [dept, prov, dist] = await Promise.all([
-          deptRes.ok ? deptRes.json() : null,
-          provRes.ok ? provRes.json() : null,
-          distRes.ok ? distRes.json() : null,
-        ]);
-        
-        if (!dept || !prov || !dist) {
-          console.warn('Boundary data incomplete — one or more files failed to load', {
-            dept: dept?.features?.length,
-            prov: prov?.features?.length,
-            dist: dist?.features?.length,
-          });
-        }
-        
-        setBoundaryData({
-          departamentos: dept,
-          provincias: prov,
-          distritos: dist,
-        });
-      } catch (e) {
-        console.error("Failed to load boundaries:", e);
-      }
-    };
-
-    loadBoundaries();
-  }, []);
+  // Boundaries are now fetched server-side via the INEI 2023 RPCs and
+  // passed in as props. The previous client-side fetch from
+  // /public/data/inei_*_2023.geojson (a copy of the juaneladio repo) is
+  // gone — those files have been removed.
+  const boundaryData = useMemo(
+    () => ({
+      departamentos: departamentos ?? null,
+      provincias: provincias ?? null,
+      distritos: distritos ?? null,
+    }),
+    [departamentos, provincias, distritos],
+  );
 
   // The colour of the área de estudio outline communicates status:
   //   draft → amber   approved → emerald   superseded → muted
@@ -376,12 +353,12 @@ export default function ProjectMap({
     setMapLoaded(false);
 
     // Hard gate: MapLibre GL v5 requires WebGL2.
-    {
-      const probe = document.createElement("canvas");
-      if (!probe.getContext("webgl2")) {
+    const probe = document.createElement("canvas");
+    if (!probe.getContext("webgl2")) {
+      queueMicrotask(() => {
         setMapError("Tu navegador no soporta WebGL2, necesario para el mapa.");
-        return;
-      }
+      });
+      return;
     }
 
     let map: MlMap;
@@ -397,7 +374,9 @@ export default function ProjectMap({
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setMapError(msg);
+      queueMicrotask(() => {
+        setMapError(msg);
+      });
       return;
     }
 
@@ -594,9 +573,48 @@ export default function ProjectMap({
         },
       });
 
-      // Roads — from OpenStreetMap (not yet loaded - placeholder)
-      // Will be added when roads data is available
-      /*
+      // Comunidades Campesinas — community-titled lands (COFOPRI / MINAGRI).
+      map.addSource("comunidades", {
+        type: "geojson",
+        data: comunidades ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "comunidades-fill",
+        type: "fill",
+        source: "comunidades",
+        paint: {
+          "fill-color": "#f59e0b", // amber-500
+          "fill-opacity": 0.18,
+        },
+      });
+      map.addLayer({
+        id: "comunidades-line",
+        type: "line",
+        source: "comunidades",
+        paint: {
+          "line-color": "#b45309", // amber-700
+          "line-width": 1.5,
+          "line-dasharray": [4, 2],
+        },
+      });
+      map.addLayer({
+        id: "comunidades-label",
+        type: "symbol",
+        source: "comunidades",
+        minzoom: 10,
+        layout: {
+          "text-field": ["get", "nombre"],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 11,
+        },
+        paint: {
+          "text-color": "#92400e",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.2,
+        },
+      });
+
+      // Roads — MTC Red Vial (Nacional / Departamental / Vecinal)
       map.addSource("roads", {
         type: "geojson",
         data: EMPTY_FC,
@@ -612,25 +630,23 @@ export default function ProjectMap({
         paint: {
           "line-color": [
             "match",
-            ["get", "tipo"],
-            "primary", "#dc2626",
-            "secondary", "#ea580c",
-            "tertiary", "#f59e0b",
-            "trunk", "#16a34a",
-            "#9ca3af",  // default gray
+            ["get", "jerarquia"],
+            "RN", "#dc2626",          // Nacional — red
+            "RD", "#ea580c",          // Departamental — orange
+            "RV", "#ca8a04",          // Vecinal — amber
+            "#9ca3af",                // default gray
           ],
           "line-width": [
             "match",
-            ["get", "tipo"],
-            "primary", 4,
-            "trunk", 3,
-            "secondary", 2.5,
-            "tertiary", 2,
+            ["get", "jerarquia"],
+            "RN", 3,
+            "RD", 2,
+            "RV", 1,
             1,
           ],
+          "line-opacity": 0.85,
         },
       });
-      */
 
       map.addLayer({
         id: "area-estudio-fill",
@@ -1324,6 +1340,9 @@ export default function ProjectMap({
     const contoursSrc = map.getSource("contours") as GeoJSONSource | undefined;
     if (contoursSrc) contoursSrc.setData(contours ?? EMPTY_FC);
 
+    const comunSrc = map.getSource("comunidades") as GeoJSONSource | undefined;
+    if (comunSrc) comunSrc.setData(comunidades ?? EMPTY_FC);
+
     const peruBoundarySrc = map.getSource("peru-boundary") as GeoJSONSource | undefined;
     if (peruBoundarySrc)
       peruBoundarySrc.setData(
@@ -1335,16 +1354,6 @@ export default function ProjectMap({
     const deptSrc = map.getSource("departamentos") as GeoJSONSource | undefined;
     const provSrc = map.getSource("provincias") as GeoJSONSource | undefined;
     const distSrc = map.getSource("distritos") as GeoJSONSource | undefined;
-    
-    console.log('Updating boundary sources:', {
-      deptSrc: !!deptSrc,
-      provSrc: !!provSrc,
-      distSrc: !!distSrc,
-      deptData: boundaryData.departamentos?.features?.length,
-      provData: boundaryData.provincias?.features?.length,
-      distData: boundaryData.distritos?.features?.length,
-    });
-    
     if (deptSrc) {
       deptSrc.setData(boundaryData.departamentos ?? EMPTY_FC);
     }
@@ -1355,8 +1364,8 @@ export default function ProjectMap({
       distSrc.setData(boundaryData.distritos ?? EMPTY_FC);
     }
 
-    // Roads source placeholder (not yet loaded)
-    // const roadsSrc = map.getSource("roads") as GeoJSONSource | undefined;
+    const roadsSrc = map.getSource("roads") as GeoJSONSource | undefined;
+    if (roadsSrc) roadsSrc.setData(vias ?? EMPTY_FC);
 
     if (map.getLayer("area-estudio-fill")) {
       map.setPaintProperty("area-estudio-fill", "fill-color", areaColor);
@@ -1364,7 +1373,7 @@ export default function ProjectMap({
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData, comunidades, vias]);
 
   // Separate effect specifically for boundary data updates
   useEffect(() => {
@@ -1467,7 +1476,8 @@ export default function ProjectMap({
   const hasDepartamentos = (boundaryData.departamentos?.features.length ?? 0) > 0;
   const hasProvincias = (boundaryData.provincias?.features.length ?? 0) > 0;
   const hasDistritos = (boundaryData.distritos?.features.length ?? 0) > 0;
-  const hasRoads = false; // Roads not loaded yet
+  const hasComunidades = (comunidades?.features.length ?? 0) > 0;
+  const hasRoads = (vias?.features.length ?? 0) > 0;
   const hasConcesiones = (concesiones?.features.length ?? 0) > 0;
   const hasContours = (contours?.features.length ?? 0) > 0;
   const hasPeruBoundary = peruBoundary !== null && peruBoundary !== undefined;
@@ -1536,7 +1546,7 @@ export default function ProjectMap({
     const m: MlMap = map;
 
     // Deep clone so prop never mutates.
-    let working: GeoJSON.Polygon | GeoJSON.MultiPolygon = JSON.parse(
+    const working: GeoJSON.Polygon | GeoJSON.MultiPolygon = JSON.parse(
       JSON.stringify(seed),
     );
     onAreaEfectivaGeomChange?.(working);
@@ -1676,16 +1686,13 @@ export default function ProjectMap({
     };
     let dragging: DragState | null = null;
 
-    function onVertexMouseDown(
-      e: maplibregl.MapMouseEvent & {
-        features?: GeoJSON.Feature<GeoJSON.Point>[];
-      },
-    ): void {
-      if (!e.features || e.features.length === 0) return;
+    function onVertexMouseDown(e: maplibregl.MapMouseEvent): void {
+      const feats = (e as unknown as { features?: { properties: unknown }[] })
+        .features;
+      if (!feats || feats.length === 0) return;
       // Shift+click = delete vertex
       if (e.originalEvent.shiftKey) {
-        const f = e.features[0];
-        const p = f.properties as {
+        const p = feats[0].properties as {
           polyIdx: number;
           ringIdx: number;
           vertexIdx: number;
@@ -1694,8 +1701,7 @@ export default function ProjectMap({
         return;
       }
       e.preventDefault();
-      const f = e.features[0];
-      const p = f.properties as {
+      const p = feats[0].properties as {
         polyIdx: number;
         ringIdx: number;
         vertexIdx: number;
@@ -1705,10 +1711,10 @@ export default function ProjectMap({
         ringIdx: p.ringIdx,
         vertexIdx: p.vertexIdx,
       };
-      map.getCanvas().style.cursor = "grabbing";
-      map.dragPan.disable();
-      map.on("mousemove", onMapMouseMove);
-      map.once("mouseup", onMapMouseUp);
+      m.getCanvas().style.cursor = "grabbing";
+      m.dragPan.disable();
+      m.on("mousemove", onMapMouseMove);
+      m.once("mouseup", onMapMouseUp);
     }
 
     function onMapMouseMove(e: maplibregl.MapMouseEvent): void {
@@ -1733,9 +1739,9 @@ export default function ProjectMap({
     function onMapMouseUp(): void {
       if (!dragging) return;
       dragging = null;
-      map.getCanvas().style.cursor = "";
-      map.dragPan.enable();
-      map.off("mousemove", onMapMouseMove);
+      m.getCanvas().style.cursor = "";
+      m.dragPan.enable();
+      m.off("mousemove", onMapMouseMove);
       onAreaEfectivaGeomChange?.(working);
     }
 
@@ -1762,14 +1768,11 @@ export default function ProjectMap({
       onAreaEfectivaGeomChange?.(working);
     }
 
-    function onMidpointClick(
-      e: maplibregl.MapMouseEvent & {
-        features?: GeoJSON.Feature<GeoJSON.Point>[];
-      },
-    ): void {
-      if (!e.features || e.features.length === 0) return;
-      const f = e.features[0];
-      const p = f.properties as {
+    function onMidpointClick(e: maplibregl.MapMouseEvent): void {
+      const feats = (e as unknown as { features?: { properties: unknown }[] })
+        .features;
+      if (!feats || feats.length === 0) return;
+      const p = feats[0].properties as {
         polyIdx: number;
         ringIdx: number;
         insertAfter: number;
@@ -1787,42 +1790,42 @@ export default function ProjectMap({
     }
 
     function onVertexEnter(): void {
-      map.getCanvas().style.cursor = "grab";
+      m.getCanvas().style.cursor = "grab";
     }
     function onVertexLeave(): void {
-      if (!dragging) map.getCanvas().style.cursor = "";
+      if (!dragging) m.getCanvas().style.cursor = "";
     }
 
-    map.on("mousedown", "ae-editor-vertices", onVertexMouseDown);
-    map.on("mouseenter", "ae-editor-vertices", onVertexEnter);
-    map.on("mouseleave", "ae-editor-vertices", onVertexLeave);
-    map.on("click", "ae-editor-midpoints", onMidpointClick);
-    map.on("mouseenter", "ae-editor-midpoints", onVertexEnter);
-    map.on("mouseleave", "ae-editor-midpoints", onVertexLeave);
+    m.on("mousedown", "ae-editor-vertices", onVertexMouseDown);
+    m.on("mouseenter", "ae-editor-vertices", onVertexEnter);
+    m.on("mouseleave", "ae-editor-vertices", onVertexLeave);
+    m.on("click", "ae-editor-midpoints", onMidpointClick);
+    m.on("mouseenter", "ae-editor-midpoints", onVertexEnter);
+    m.on("mouseleave", "ae-editor-midpoints", onVertexLeave);
 
     // ── Cleanup ─────────────────────────────────────────────────────
     return () => {
-      map.off("mousedown", "ae-editor-vertices", onVertexMouseDown);
-      map.off("mouseenter", "ae-editor-vertices", onVertexEnter);
-      map.off("mouseleave", "ae-editor-vertices", onVertexLeave);
-      map.off("click", "ae-editor-midpoints", onMidpointClick);
-      map.off("mouseenter", "ae-editor-midpoints", onVertexEnter);
-      map.off("mouseleave", "ae-editor-midpoints", onVertexLeave);
-      map.off("mousemove", onMapMouseMove);
-      map.dragPan.enable();
-      map.getCanvas().style.cursor = "";
+      m.off("mousedown", "ae-editor-vertices", onVertexMouseDown);
+      m.off("mouseenter", "ae-editor-vertices", onVertexEnter);
+      m.off("mouseleave", "ae-editor-vertices", onVertexLeave);
+      m.off("click", "ae-editor-midpoints", onMidpointClick);
+      m.off("mouseenter", "ae-editor-midpoints", onVertexEnter);
+      m.off("mouseleave", "ae-editor-midpoints", onVertexLeave);
+      m.off("mousemove", onMapMouseMove);
+      m.dragPan.enable();
+      m.getCanvas().style.cursor = "";
 
-      if (map.getLayer("ae-editor-vertices"))
-        map.removeLayer("ae-editor-vertices");
-      if (map.getLayer("ae-editor-midpoints"))
-        map.removeLayer("ae-editor-midpoints");
-      if (map.getSource("ae-editor-vertices"))
-        map.removeSource("ae-editor-vertices");
-      if (map.getSource("ae-editor-midpoints"))
-        map.removeSource("ae-editor-midpoints");
+      if (m.getLayer("ae-editor-vertices"))
+        m.removeLayer("ae-editor-vertices");
+      if (m.getLayer("ae-editor-midpoints"))
+        m.removeLayer("ae-editor-midpoints");
+      if (m.getSource("ae-editor-vertices"))
+        m.removeSource("ae-editor-vertices");
+      if (m.getSource("ae-editor-midpoints"))
+        m.removeSource("ae-editor-midpoints");
 
       // Restore main efectiva layer to the persisted (unedited) polygon.
-      const efectivaSrc = map.getSource("area-efectiva") as
+      const efectivaSrc = m.getSource("area-efectiva") as
         | GeoJSONSource
         | undefined;
       efectivaSrc?.setData(asAreaFeatureCollection(areaEfectiva));
@@ -1965,6 +1968,24 @@ export default function ProjectMap({
                 color: "#8b5cf6",
                 visible: groupVisible.districts,
                 onToggle: () => toggleGroup("districts"),
+              }
+            : null,
+          hasComunidades
+            ? {
+                label: "Comunidades campesinas",
+                swatch: "area" as const,
+                color: "#b45309",
+                visible: groupVisible.comunidades,
+                onToggle: () => toggleGroup("comunidades"),
+              }
+            : null,
+          hasRoads
+            ? {
+                label: "Red vial MTC",
+                swatch: "line" as const,
+                color: "#dc2626",
+                visible: groupVisible.roads,
+                onToggle: () => toggleGroup("roads"),
               }
             : null,
           ...stationKinds.map((k): LegendItem => ({

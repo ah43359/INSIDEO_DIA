@@ -4,6 +4,7 @@ import {
   type FactorDef,
   type FactorKind,
 } from "@/lib/monitoreo/eca-registry";
+import type { FactorReadiness } from "@/lib/monitoreo/factor-checks";
 import CompletenessBar from "./CompletenessBar";
 
 interface FactorOverviewCardProps {
@@ -15,6 +16,10 @@ interface FactorOverviewCardProps {
   total: number;
   exceedances: number;
   campaign?: string;
+  /** Required-parameter completeness (driven by `factor.minParameters`). */
+  requiredFilled?: number;
+  requiredTotal?: number;
+  readiness?: FactorReadiness;
 }
 
 export default function FactorOverviewCard({
@@ -26,12 +31,17 @@ export default function FactorOverviewCard({
   total,
   exceedances,
   campaign,
+  requiredFilled,
+  requiredTotal,
+  readiness,
 }: FactorOverviewCardProps) {
   const style = FACTOR_STYLES[factor.id as FactorKind] ?? FACTOR_STYLES.aire;
   const empty = stationsCount === 0;
   const href = campaign
     ? `/projects/${projectId}/monitoreo/${factor.id}?campaign=${encodeURIComponent(campaign)}`
     : `/projects/${projectId}/monitoreo/${factor.id}`;
+
+  const badge = readinessBadge(readiness ?? "not_required");
 
   return (
     <Link
@@ -50,14 +60,22 @@ export default function FactorOverviewCard({
             {factor.section} · {factor.decree}
           </div>
         </div>
-        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-600 whitespace-nowrap">
-          {factor.sectionTitle.split(" ")[0]}
-        </span>
+        {badge}
       </div>
 
       {empty ? (
-        <div className="mt-4 rounded-md border border-dashed border-stone-300 px-3 py-4 text-center text-xs text-stone-500">
-          Sin estaciones registradas para este factor.
+        <div
+          className={`mt-4 rounded-md border border-dashed px-3 py-4 text-center text-xs ${
+            factor.required === "always"
+              ? "border-red-300 bg-red-50 text-red-700"
+              : "border-stone-300 text-stone-500"
+          }`}
+        >
+          {factor.required === "always"
+            ? "Falta diseñar estaciones para este factor."
+            : factor.required === "conditional"
+            ? "Sin estaciones (aplica solo si el proyecto lo requiere)."
+            : "Sin estaciones registradas para este factor."}
         </div>
       ) : (
         <>
@@ -73,6 +91,14 @@ export default function FactorOverviewCard({
           <div className="mt-3">
             <CompletenessBar filled={filled} total={total} accent={style.accent} />
           </div>
+          {factor.required !== "optional" && (requiredTotal ?? 0) > 0 && (
+            <div className="mt-2 flex items-baseline justify-between text-xs">
+              <span className="text-stone-500">Parámetros mínimos DIA</span>
+              <span className="tabular-nums text-stone-700">
+                {requiredFilled ?? 0} / {requiredTotal}
+              </span>
+            </div>
+          )}
         </>
       )}
 
@@ -110,5 +136,43 @@ function Stat({
         {label}
       </div>
     </div>
+  );
+}
+
+function readinessBadge(readiness: FactorReadiness) {
+  const map: Record<
+    FactorReadiness,
+    { label: string; cls: string } | null
+  > = {
+    not_required: null,
+    conditional_unused: {
+      label: "CONDICIONAL",
+      cls: "bg-stone-100 text-stone-600 border border-stone-200",
+    },
+    missing_stations: {
+      label: "REQUERIDO",
+      cls: "bg-red-100 text-red-800 border border-red-200",
+    },
+    missing_measurements: {
+      label: "FALTAN MEDICIONES",
+      cls: "bg-amber-100 text-amber-800 border border-amber-200",
+    },
+    partial: {
+      label: "PARCIAL",
+      cls: "bg-amber-100 text-amber-800 border border-amber-200",
+    },
+    complete: {
+      label: "COMPLETO",
+      cls: "bg-emerald-100 text-emerald-800 border border-emerald-200",
+    },
+  };
+  const b = map[readiness];
+  if (!b) return null;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${b.cls}`}
+    >
+      {b.label}
+    </span>
   );
 }

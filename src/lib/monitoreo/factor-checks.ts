@@ -10,10 +10,13 @@ import {
   AGUA_MULTI_PARAMS,
   AGUA_SUB_PARAMS,
   AIRE_PARAMS,
+  FACTOR_DEFS,
+  FACTOR_DEFS_MAP,
   RUIDO_PARAMS,
   SEDIMENTOS_PARAMS,
   SUELOS_PARAMS,
   type AguaCategory,
+  type FactorDef,
   type FactorKind,
   type NoiseZone,
   type SoilCategory,
@@ -243,4 +246,102 @@ export function computeCompleteness(args: {
     }
   }
   return { filled, total, ratio: filled / total };
+}
+
+// ── Required-completeness (Cap 3 DIA gate) ────────────────────────────────────
+
+/**
+ * Completeness against the **minParameters** declared in `FACTOR_DEFS`. The
+ * Cap 3 DIA isn't considered "data-complete" for a factor until every station
+ * has every minimum parameter measured.
+ *
+ * For taxonomic factors (flora / fauna / vida_acuática) `minParameters` is
+ * empty — completeness collapses to "at least one station with at least one
+ * record" (handled by callers via `stationsCount > 0 && filled > 0`).
+ */
+export function computeRequiredCompleteness(args: {
+  factor: FactorKind;
+  stationCodes: string[];
+  results: Record<string, Record<string, string | number>>;
+}): CompletenessStats {
+  const { factor, stationCodes, results } = args;
+  const def = FACTOR_DEFS_MAP[factor];
+  const minParams = def?.minParameters ?? [];
+
+  if (minParams.length === 0) {
+    // Taxonomic / qualitative factor — ratio = stations with any record.
+    if (stationCodes.length === 0) return { filled: 0, total: 0, ratio: 0 };
+    let stationsWithData = 0;
+    for (const code of stationCodes) {
+      const stationResults = results[code] ?? {};
+      if (Object.keys(stationResults).length > 0) stationsWithData += 1;
+    }
+    return {
+      filled: stationsWithData,
+      total: stationCodes.length,
+      ratio: stationCodes.length === 0 ? 0 : stationsWithData / stationCodes.length,
+    };
+  }
+
+  const total = stationCodes.length * minParams.length;
+  if (total === 0) return { filled: 0, total: 0, ratio: 0 };
+  let filled = 0;
+  for (const code of stationCodes) {
+    const stationResults = results[code] ?? {};
+    for (const paramId of minParams) {
+      const raw = stationResults[paramId];
+      if (raw != null && String(raw).trim() !== "") filled += 1;
+    }
+  }
+  return { filled, total, ratio: filled / total };
+}
+
+/**
+ * Status of a factor against the Cap 3 baseline requirement.
+ *
+ * Used to drive the per-card badge and the "factores requeridos pendientes"
+ * top-banner on `/projects/[id]/monitoreo`.
+ */
+export type FactorReadiness =
+  | "not_required"          // factor.required === 'optional'
+  | "conditional_unused"     // factor.required === 'conditional' && stationsCount === 0
+  | "missing_stations"        // factor.required === 'always' && stationsCount === 0
+  | "missing_measurements"   // stations exist, but no measurements yet
+  | "partial"                 // some min-params measured, but not all
+  | "complete";               // all min-params on every station have data
+
+export function factorReadiness(args: {
+  factor: FactorKind;
+  stationsCount: number;
+  stationCodes: string[];
+  results: Record<string, Record<string, string | number>>;
+}): FactorReadiness {
+  const { factor, stationsCount, stationCodes, results } = args;
+  const def = FACTOR_DEFS_MAP[factor];
+  const required = def?.required ?? "optional";
+
+  if (required === "optional") return "not_required";
+  if (stationsCount === 0) {
+    return required === "always" ? "missing_stations" : "conditional_unused";
+  }
+
+  const stats = computeRequiredCompleteness({ factor, stationCodes, results });
+  if (stats.filled === 0) return "missing_measurements";
+  if (stats.ratio >= 1) return "complete";
+  return "partial";
+}
+
+/**
+ * Walk the factor stats map and return the FactorDefs whose `required === 'always'`
+ * have zero stations. These are the factors the consultant still needs to set up
+ * before the Cap 3 baseline can be considered "designed".
+ */
+export function missingAlwaysRequiredFactors(
+  factorStats: Map<FactorKind, { stationsCount: number }>,
+): FactorDef[] {
+  return FACTOR_DEFS.filter((f) => {
+    if (f.required !== "always") return false;
+    const s = factorStats.get(f.id);
+    return !s || s.stationsCount === 0;
+  });
 }

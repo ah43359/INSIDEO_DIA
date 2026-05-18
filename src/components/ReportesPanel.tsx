@@ -116,6 +116,21 @@ export default function ReportesPanel({ projectId, projectName }: ReportesPanelP
 
         <div className="flex items-center justify-between rounded-md border border-stone-200 bg-stone-50 px-4 py-3">
           <div>
+            <p className="text-sm font-medium text-stone-800">Plan de Campo</p>
+            <p className="text-xs text-stone-500">
+              Logística · labs INACAL · personal biológico · inspectores · sociales
+            </p>
+          </div>
+          <Link
+            href={`/projects/${projectId}?tab=campo`}
+            className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-800 transition hover:bg-stone-100"
+          >
+            Abrir
+          </Link>
+        </div>
+
+        <div className="flex items-center justify-between rounded-md border border-stone-200 bg-stone-50 px-4 py-3">
+          <div>
             <p className="text-sm font-medium text-stone-800">DIA — 7 capítulos</p>
             <p className="text-xs text-stone-500">
               Editor por capítulo según RM N° 108-2018-MEM/DM · prellenado desde los componentes del proyecto

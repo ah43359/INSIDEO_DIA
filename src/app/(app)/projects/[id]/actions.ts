@@ -81,6 +81,8 @@ export interface ProposeOptions {
   maxStationsPerKind?: number;
   /** ``"yes"`` / ``"no"`` overrides the auto-detected explosives flag. */
   forceExplosives?: "yes" | "no";
+  /** Restrict proposal to specific station kinds (e.g. only the missing ones). */
+  onlyKinds?: readonly string[];
 }
 
 export async function enqueueProposeStations(
@@ -97,6 +99,9 @@ export async function enqueueProposeStations(
   }
   if (options.forceExplosives) {
     payload.force_explosives = options.forceExplosives;
+  }
+  if (options.onlyKinds && options.onlyKinds.length > 0) {
+    payload.only_kinds = options.onlyKinds;
   }
 
   const { data, error } = await supabase.rpc("enqueue_propose_stations", {

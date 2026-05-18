@@ -5,6 +5,8 @@ const bundleAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
 });
 
+const isProduction = process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
@@ -30,7 +32,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["docx", "proj4"],
   logging: {
     fetches: {
-      fullUrl: true,
+      fullUrl: !isProduction,
     },
   },
   headers: async () => [
@@ -53,6 +55,18 @@ const nextConfig: NextConfig = {
           key: "Referrer-Policy",
           value: "strict-origin-when-cross-origin",
         },
+        {
+          key: "Permissions-Policy",
+          value: "camera=(), microphone=(), geolocation=()",
+        },
+        ...(isProduction
+          ? [
+              {
+                key: "Strict-Transport-Security",
+                value: "max-age=63072000; includeSubDomains; preload",
+              },
+            ]
+          : []),
       ],
     },
     {
