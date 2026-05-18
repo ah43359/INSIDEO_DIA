@@ -948,9 +948,8 @@ function ResumenTab({
 
 // ── Vegetation palette + aggregation ─────────────────────────────────────────
 
+// MINAM 2015 Simbolo → color.
 const VEGE_COLORS: Record<string, string> = {
-  "10": "#1b5e20", "20": "#4caf50", "30": "#cddc39", "40": "#ff9800",
-  "80": "#0288d1", "90": "#8bc34a", "95": "#009688",
   Pj: "#d4a017", Pjh: "#eab308",
   "Br-al": "#166534", "Br-me": "#15803d", Bp: "#14532d", "Bp-A": "#22c55e",
   "Bh-MBT": "#0f766e", "Bh-MBS": "#10b981", "Bh-T": "#059669",
@@ -992,7 +991,7 @@ function VegetacionBar({ vegetation }: { vegetation: VegetationZone[] }) {
     <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-stone-700">
-          Vegetación · WorldCover / MINAM
+          Vegetación · MINAM 2015
         </h2>
         <span className="text-xs text-stone-400">{fmt(total)} ha total</span>
       </div>

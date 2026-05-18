@@ -8,8 +8,8 @@
 //      3.2.2 recipe markers.
 //   4. The cap3 suffix is absent when chapterNum != 3.
 
-import { RECIPES, renderRecipeForPrompt, isSectionRequiredAtTier } from "../src/lib/dia/rag/baselinePlaybook.ts";
-import { buildSystemPrompt } from "../src/lib/dia/rag/prompts.ts";
+import { RECIPES, renderRecipeForPrompt, isSectionRequiredAtTier } from "../src/lib/dia/rag/baselinePlaybook";
+import { buildSystemPrompt } from "../src/lib/dia/rag/prompts";
 
 const EXPECTED_LEAVES = [
   "3.1",
@@ -20,8 +20,8 @@ const EXPECTED_LEAVES = [
 ];
 
 let failures = 0;
-const fail = (msg) => { console.error("FAIL:", msg); failures++; };
-const ok = (msg) => console.log("ok  :", msg);
+const fail = (msg: string) => { console.error("FAIL:", msg); failures++; };
+const ok = (msg: string) => console.log("ok  :", msg);
 
 // 1. Coverage
 for (const path of EXPECTED_LEAVES) {

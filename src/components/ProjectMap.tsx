@@ -130,7 +130,7 @@ interface ProjectMapProps {
   areaEstudioStatus?: "draft" | "approved" | "superseded" | null;
   /** Área efectiva — convex hull + buffer of components. Optional. */
   areaEfectiva?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
-  /** Vegetation zones derived from ESA WorldCover. Optional. */
+  /** Vegetation zones from MINAM 2015 cobertura vegetal. Optional. */
   vegetationZones?: GeoJSON.FeatureCollection | null;
   /** Mining concessions (Concesiones Mineras) from INGEMMET Geocatmin. Optional. */
   concesiones?: GeoJSON.FeatureCollection | null;
@@ -180,18 +180,9 @@ const COLOR_BY_TIPO: Record<string, string> = {
   default: "#52525b",
 };
 
-// Class colors keyed by string class_code. Numeric ESA WorldCover codes
-// stay as their string form ("10", "20", …); MINAM Simbolo codes are
-// listed below — each ecosystem gets a distinct hue.
+// Class colors keyed by MINAM 2015 Simbolo code — each ecosystem gets a
+// distinct hue. Unknown codes fall back to VEGETATION_FALLBACK_COLOR.
 const VEGETATION_CLASS_COLORS: Record<string, string> = {
-  // ESA WorldCover numeric codes
-  "10": "#1b5e20",  // Tree cover — dark green
-  "20": "#4caf50",  // Shrubland — medium green
-  "30": "#cddc39",  // Grassland — yellow-green
-  "40": "#ff9800",  // Cropland — orange
-  "80": "#0288d1",  // Permanent water — blue
-  "90": "#8bc34a",  // Herbaceous wetland — light green
-  "95": "#009688",  // Mangroves — teal
   // MINAM 2015 — Pajonales / Pastizales
   "Pj":     "#d4a017",  // Pajonal andino — golden yellow
   "Pjh":    "#eab308",  // Pajonal de puna húmeda
@@ -318,10 +309,9 @@ export default function ProjectMap({
   // Vegetation classes: each class togglable independently.
   const [vegClassVisible, setVegClassVisible] = useState<Record<string, boolean>>({});
 
-  // Boundaries are now fetched server-side via the INEI 2023 RPCs and
-  // passed in as props. The previous client-side fetch from
-  // /public/data/inei_*_2023.geojson (a copy of the juaneladio repo) is
-  // gone — those files have been removed.
+  // Boundaries flow in as props from the server. They come from the
+  // ref_departamentos / ref_provincias / ref_distritos tables via the
+  // get_*_for_project RPCs (real INEI 2023 source).
   const boundaryData = useMemo(
     () => ({
       departamentos: departamentos ?? null,
@@ -466,7 +456,7 @@ export default function ProjectMap({
         },
       });
 
-      // Vegetation zones — ESA WorldCover classes, colored by class code.
+      // Vegetation zones — MINAM 2015 cobertura vegetal, colored by Simbolo.
       // Semi-transparent fills with class labels.
       map.addSource("vegetation", {
         type: "geojson",
@@ -1277,7 +1267,7 @@ export default function ProjectMap({
           <div style="font-family: system-ui, sans-serif; font-size: 12px;">
             <div style="font-weight: 600; margin-bottom: 4px;">${props.class_name}</div>
             <div>Área: ${props.area_ha} ha</div>
-            <div>Código ESA: ${props.class_code}</div>
+            <div>Código MINAM: ${props.class_code}</div>
           </div>`;
         new maplibregl.Popup({ closeButton: true })
           .setLngLat(e.lngLat)

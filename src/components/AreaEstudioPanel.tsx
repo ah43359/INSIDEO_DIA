@@ -25,7 +25,7 @@ interface AreaEstudioPanelProps {
   hasAreaEstudio: boolean;
   /** Current number of components_geom rows. */
   componentCount: number;
-  /** Vegetation zones derived from ESA WorldCover. */
+  /** Vegetation zones from MINAM 2015 cobertura vegetal. */
   vegetationZones: VegetationZoneRow[];
 }
 
@@ -68,14 +68,37 @@ const KIND_COLOR: Record<string, string> = {
   sedimentos: "#854d0e",
 };
 
+// MINAM 2015 Simbolo → color. Subset covers the common cobertura vegetal
+// classes; unknown codes fall back to a neutral stone gray in the legend.
 const VEG_CLASS_COLOR: Record<string, string> = {
-  "10": "#1b5e20",
-  "20": "#4caf50",
-  "30": "#cddc39",
-  "40": "#ff9800",
-  "80": "#0288d1",
-  "90": "#8bc34a",
-  "95": "#009688",
+  Pj: "#d4a017",
+  Pjh: "#eab308",
+  "Br-al": "#166534",
+  "Br-me": "#15803d",
+  Bp: "#14532d",
+  "Bp-A": "#22c55e",
+  "Bh-MBT": "#0f766e",
+  "Bh-MBS": "#10b981",
+  "Bh-T": "#059669",
+  "Bs-mo": "#a16207",
+  "Bs-MA": "#b45309",
+  "Bs-T": "#92400e",
+  Ma: "#84cc16",
+  "Ma-DS": "#bef264",
+  "Ma-T": "#4d7c0f",
+  Bof: "#2dd4bf",
+  "L/Co": "#38bdf8",
+  Pa: "#14b8a6",
+  Agri: "#f97316",
+  Agro: "#fb923c",
+  Cul: "#fdba74",
+  Pc: "#65a30d",
+  ZU: "#dc2626",
+  Roq: "#71717a",
+  D: "#fde68a",
+  Lo: "#facc15",
+  Tu: "#a78bfa",
+  Gn: "#e0e7ff",
 };
 
 interface PanelStationGroup {
@@ -314,7 +337,7 @@ export default function AreaEstudioPanel({
 
         <div>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            Zonas de vegetación (WorldCover)
+            Zonas de vegetación (MINAM 2015)
           </h3>
           {vegClasses.length === 0 ? (
             <p className="text-sm text-stone-500">
