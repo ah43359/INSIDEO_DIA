@@ -42,3 +42,10 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# local agent tooling (Claude Code / Claire worktrees)
+/.claude/worktrees/
+/.claire/
+
+# dev server scratch logs
+tmp_server*.log
