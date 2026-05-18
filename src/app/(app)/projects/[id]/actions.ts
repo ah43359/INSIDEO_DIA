@@ -114,6 +114,22 @@ export async function enqueueProposeStations(
   return { ok: true, jobId: String(data) };
 }
 
+// ─── Propose soil stations only ───────────────────────────────────────────
+
+export async function enqueueProposeSoilStations(
+  projectId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("enqueue_propose_stations", {
+    p_project_id: projectId,
+    p_options: { only_kinds: ["suelos"] },
+  });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true, jobId: String(data) };
+}
+
 // ─── Upload (enqueue) ────────────────────────────────────────────────────
 
 export async function enqueueUploadAreaEstudio(
@@ -233,3 +249,17 @@ export async function cancelDerivationJob(
   return { ok: true };
 }
 
+// ─── Vegetation (enqueue) ──────────────────────────────────────────────
+
+export async function enqueueVegetation(
+  projectId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("enqueue_vegetation", {
+    p_project_id: projectId,
+  });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true, jobId: String(data) };
+}

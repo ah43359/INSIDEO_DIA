@@ -58,9 +58,9 @@ regulatory framing for the whole baseline study.
 | Section | Title | Class | Origin | Status | Notes |
 |---|---|---|---|---|---|
 | 3.3 | Medio biológico (parent intro) | BOILERPLATE | Cap 3 corpus, `section_filter='3.3'` | Partial | Bottom-up parent intro after 3.3.1–3.3.3 are filled. |
-| 3.3.1 | Flora | MIXED | `lb_flora` fields (`lb_formacionesVeg`, `lb_especiesFlora`, `lb_metodoFlora`). Field flora-inventory upload form is a **Gap (P1)**. | Gap | Today the species list is a free-text field; we want a structured inventory table tied to sampling stations (kind='biologica_flora'?) and an Excel/CSV importer. |
+| 3.3.1 | Flora | MIXED | `vegetation_zones` / `minam_vegetation` (Cap MINAM 2015, migrations 0005–0006) intersected with project AOI + `lb_flora` fields (`lb_formacionesVeg`, `lb_especiesFlora`, `lb_metodoFlora`). Field flora-inventory upload form is a **Gap (P1)**. | Partial → Gap | Today the species list is a free-text field; we want a structured inventory table tied to sampling stations (kind='biologica_flora'?) and an Excel/CSV importer. |
 | 3.3.2 | Fauna | MIXED | `lb_fauna` fields (`lb_aves`, `lb_mamiferos`, `lb_reptilesAnfibios`, `lb_metodoFauna`). Field fauna-inventory upload form is a **Gap (P1)**. | Gap | Same structural gap as flora — no fauna table or importer. |
-| 3.3.3 | Ecosistemas | MIXED | SERNANP ANP ref layer (gap — no `ref_anp` yet) + `lb_ecosistemas` fields (`lb_ecosistemasIdentificados`, `lb_ecosistemasFragiles`, `lb_anpRelacion`) | Gap (ANP) | `lb_anpRelacion` is typed; once `ref_anp` lands, `derive.ts` can compute distance + relation automatically. |
+| 3.3.3 | Ecosistemas | MIXED | `vegetation_zones` (proxy for MINAM ecosistemas) + SERNANP ANP ref layer (gap — no `ref_anp` yet) + `lb_ecosistemas` fields (`lb_ecosistemasIdentificados`, `lb_ecosistemasFragiles`, `lb_anpRelacion`) | Partial (ecosistemas) + Gap (ANP) | `lb_anpRelacion` is typed; once `ref_anp` lands, `derive.ts` can compute distance + relation automatically. |
 
 ---
 
@@ -131,6 +131,7 @@ whichever keyword appeared first.
 |---|---|---|---|---|
 | ANA Pfafstetter microcuencas | `ref_microcuencas` (+ `match_microcuencas` RPC) | `skills/reference-layers/scripts/ingest_microcuencas.py` | LB Físico (3.2.6) | Ingested |
 | ANA hydro network | `ref_rivers` | `ingest_rivers.py` | LB Físico (3.2.6) | Ingested |
+| MINAM cobertura vegetal 2015 | `vegetation_zones` / `minam_vegetation` | `ingest_local_watersheds.py` / `ingest_microcuencas.py` family | LB Biológico (3.3.1, 3.3.3) | Ingested |
 | INEI / IGN centros poblados | `ref_centros_poblados` | `ingest_centros_poblados.py` | LB Socio-cultural (3.4.1) | Ingested (no demographics columns yet) |
 | Political boundaries (dep/prov/dist) | `ref_departamentos`, `ref_provincias`, `ref_distritos` | embedded in `0024_political_boundaries_and_roads.sql` | All baselines | Ingested |
 | Roads (MTC / OSM) | `ref_roads`, `ref_vias_mtc` (0039) | `ingest_vias_mtc.py` | LB Físico (context maps) | Ingested |
