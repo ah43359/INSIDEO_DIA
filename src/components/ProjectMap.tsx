@@ -94,7 +94,6 @@ const LAYER_GROUPS = {
     "components-label",
     "components-label-line",
   ],
-  vegetation:  ["vegetation-fill", "vegetation-label"],
   // Political boundaries
   departments:  ["departamentos-fill", "departamentos-line"],
   provinces:    ["provincias-fill", "provincias-line"],
@@ -130,8 +129,6 @@ interface ProjectMapProps {
   areaEstudioStatus?: "draft" | "approved" | "superseded" | null;
   /** Área efectiva — convex hull + buffer of components. Optional. */
   areaEfectiva?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
-  /** Vegetation zones derived from ESA WorldCover. Optional. */
-  vegetationZones?: GeoJSON.FeatureCollection | null;
   /** Mining concessions (Concesiones Mineras) from INGEMMET Geocatmin. Optional. */
   concesiones?: GeoJSON.FeatureCollection | null;
   /** Contour lines (IGN Carta Nacional 1:100,000) clipped to project buffer. Optional. */
@@ -180,73 +177,6 @@ const COLOR_BY_TIPO: Record<string, string> = {
   default: "#52525b",
 };
 
-// Class colors keyed by string class_code. Numeric ESA WorldCover codes
-// stay as their string form ("10", "20", …); MINAM Simbolo codes are
-// listed below — each ecosystem gets a distinct hue.
-const VEGETATION_CLASS_COLORS: Record<string, string> = {
-  // ESA WorldCover numeric codes
-  "10": "#1b5e20",  // Tree cover — dark green
-  "20": "#4caf50",  // Shrubland — medium green
-  "30": "#cddc39",  // Grassland — yellow-green
-  "40": "#ff9800",  // Cropland — orange
-  "80": "#0288d1",  // Permanent water — blue
-  "90": "#8bc34a",  // Herbaceous wetland — light green
-  "95": "#009688",  // Mangroves — teal
-  // MINAM 2015 — Pajonales / Pastizales
-  "Pj":     "#d4a017",  // Pajonal andino — golden yellow
-  "Pjh":    "#eab308",  // Pajonal de puna húmeda
-  // MINAM 2015 — Bosques relictos
-  "Br-al":  "#166534",  // Bosque relicto altoandino
-  "Br-me":  "#15803d",  // Bosque relicto mesoandino
-  "Bp":     "#14532d",  // Bosque de polylepis
-  "Bp-A":   "#22c55e",  // Bosque pluvial andino
-  // MINAM 2015 — Bosques húmedos / secos
-  "Bh-MBT": "#0f766e",  // Bosque húmedo de montaña basimontano
-  "Bh-MBS": "#10b981",  // Bosque húmedo de montaña subandino
-  "Bh-T":   "#059669",  // Bosque húmedo tropical (Amazonía)
-  "Bs-mo":  "#a16207",  // Bosque seco de montaña
-  "Bs-MA":  "#b45309",  // Bosque seco macro-andino
-  "Bs-T":   "#92400e",  // Bosque seco tropical
-  // MINAM 2015 — Matorrales
-  "Ma":     "#84cc16",  // Matorral arbustivo
-  "Ma-DS":  "#bef264",  // Matorral arbustivo desértico
-  "Ma-T":   "#4d7c0f",  // Matorral del piedemonte
-  // MINAM 2015 — Humedales / Aguas
-  "Bof":    "#2dd4bf",  // Bofedal
-  "L/Co":   "#38bdf8",  // Lagunas, lagos y cochas
-  "Pa":     "#14b8a6",  // Pantano
-  // MINAM 2015 — Áreas intervenidas / Otros
-  "Agri":   "#f97316",  // Agricultura costera y andina
-  "Agro":   "#fb923c",  // Agropecuario
-  "Cul":    "#fdba74",  // Cultivos
-  "Pc":     "#65a30d",  // Plantación forestal
-  "ZU":     "#dc2626",  // Zonas urbanas
-  // MINAM 2015 — Sin vegetación / Especiales
-  "Roq":    "#71717a",  // Roquedales
-  "D":      "#fde68a",  // Desierto costero
-  "Lo":     "#facc15",  // Loma costera
-  "Tu":     "#a78bfa",  // Tundra
-  "Gn":     "#e0e7ff",  // Glaciar / nieve
-};
-
-const VEGETATION_FALLBACK_COLOR = "#94a3b8"; // slate-400 for unknowns
-
-/**
- * Build a MapLibre `match` paint expression from VEGETATION_CLASS_COLORS
- * so the layer config and the colour map don't drift apart.
- */
-function buildVegetationFillColorExpression(): object {
-  const expr: (string | (string | unknown[])[] | unknown)[] = [
-    "match",
-    ["get", "code"],
-  ];
-  for (const [code, color] of Object.entries(VEGETATION_CLASS_COLORS)) {
-    expr.push(code, color);
-  }
-  expr.push(VEGETATION_FALLBACK_COLOR);
-  return expr;
-}
-
 const EMPTY_FC: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: [],
@@ -273,7 +203,6 @@ export default function ProjectMap({
   areaEstudio,
   areaEstudioStatus,
   areaEfectiva,
-  vegetationZones,
   concesiones,
   contours,
   peruBoundary,
@@ -301,7 +230,6 @@ export default function ProjectMap({
     rivers: true,
     receptores: true,
     components: true,
-    vegetation: true,
     departments: true,
     provinces: true,
     districts: true,
@@ -315,13 +243,10 @@ export default function ProjectMap({
   });
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
-  // Vegetation classes: each class togglable independently.
-  const [vegClassVisible, setVegClassVisible] = useState<Record<string, boolean>>({});
 
-  // Boundaries are now fetched server-side via the INEI 2023 RPCs and
-  // passed in as props. The previous client-side fetch from
-  // /public/data/inei_*_2023.geojson (a copy of the juaneladio repo) is
-  // gone — those files have been removed.
+  // Boundaries flow in as props from the server. They come from the
+  // ref_departamentos / ref_provincias / ref_distritos tables via
+  // get_*_for_project RPCs (real INEI 2023 source).
   const boundaryData = useMemo(
     () => ({
       departamentos: departamentos ?? null,
@@ -466,40 +391,6 @@ export default function ProjectMap({
         },
       });
 
-      // Vegetation zones — ESA WorldCover classes, colored by class code.
-      // Semi-transparent fills with class labels.
-      map.addSource("vegetation", {
-        type: "geojson",
-        data: vegetationZones ?? EMPTY_FC,
-      });
-      map.addLayer({
-        id: "vegetation-fill",
-        type: "fill",
-        source: "vegetation",
-        paint: {
-          "fill-color": buildVegetationFillColorExpression(),
-          "fill-opacity": 0.45,
-        },
-      });
-      map.addLayer({
-        id: "vegetation-label",
-        type: "symbol",
-        source: "vegetation",
-        minzoom: 12,
-        layout: {
-          "text-field": ["concat", ["get", "class_name"], " (", ["to-string", ["get", "area_ha"]], " ha)"],
-          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
-          "text-size": 9,
-          "text-anchor": "center",
-          "text-optional": true,
-        },
-        paint: {
-          "text-color": "#1c1917",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1.2,
-        },
-});
-  
 // Departamentos — political boundaries level 1 (loaded from Supabase)
       console.log('Creating departamentos source');
       map.addSource("departamentos", {
@@ -1268,28 +1159,6 @@ export default function ProjectMap({
         map.getCanvas().style.cursor = "";
       });
 
-      // Vegetation zone popup
-      map.on("click", "vegetation-fill", (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
-        const props = f.properties as Record<string, unknown>;
-        const html = `
-          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
-            <div style="font-weight: 600; margin-bottom: 4px;">${props.class_name}</div>
-            <div>Área: ${props.area_ha} ha</div>
-            <div>Código ESA: ${props.class_code}</div>
-          </div>`;
-        new maplibregl.Popup({ closeButton: true })
-          .setLngLat(e.lngLat)
-          .setHTML(html)
-          .addTo(map);
-      });
-      map.on("mouseenter", "vegetation-fill", () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", "vegetation-fill", () => {
-        map.getCanvas().style.cursor = "";
-      });
     });
 
     mapRef.current = map;
@@ -1331,9 +1200,6 @@ export default function ProjectMap({
     const subSrc = map.getSource("subbasins") as GeoJSONSource | undefined;
     if (subSrc) subSrc.setData(asAreaFeatureCollection(areaEstudio));
 
-    const vegSrc = map.getSource("vegetation") as GeoJSONSource | undefined;
-    if (vegSrc) vegSrc.setData(vegetationZones ?? EMPTY_FC);
-
     const concSrc = map.getSource("concesiones") as GeoJSONSource | undefined;
     if (concSrc) concSrc.setData(concesiones ?? EMPTY_FC);
 
@@ -1373,7 +1239,7 @@ export default function ProjectMap({
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData, comunidades, vias]);
+  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, concesiones, contours, peruBoundary, boundaryData, comunidades, vias]);
 
   // Separate effect specifically for boundary data updates
   useEffect(() => {
@@ -1434,36 +1300,11 @@ export default function ProjectMap({
     else map.once("load", apply);
   }, [stationKindVisible]);
 
-  // Apply vegetation-class visibility via a filter expression.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const apply = () => {
-      const entries = Object.entries(vegClassVisible);
-      const visibleCodes = entries.filter(([, v]) => v).map(([k]) => k);
-      // Empty state = no user choices yet → show all (null removes the filter).
-      // Only hide when the user has explicitly toggled every class off.
-      const filter: maplibregl.FilterSpecification | null =
-        entries.length === 0
-          ? null
-          : visibleCodes.length === 0
-          ? ["==", ["get", "code"], "__none__"]
-          : ["in", ["get", "code"], ["literal", visibleCodes]];
-      for (const id of ["vegetation-fill", "vegetation-label"]) {
-        if (map.getLayer(id)) map.setFilter(id, filter);
-      }
-    };
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
-  }, [vegClassVisible]);
-
   // Toggle handlers
   const toggleGroup = (g: LayerGroup) =>
     setGroupVisible((prev) => ({ ...prev, [g]: !prev[g] }));
   const toggleStationKind = (k: string) =>
     setStationKindVisible((prev) => ({ ...prev, [k]: !prev[k] }));
-  const toggleVegClass = (c: string) =>
-    setVegClassVisible((prev) => ({ ...prev, [c]: !prev[c] }));
 
   const hasMicrocuencas = (microcuencas?.features.length ?? 0) > 0;
   const hasRivers = (rivers?.features.length ?? 0) > 0;
@@ -1472,7 +1313,6 @@ export default function ProjectMap({
   const hasArea = areaEstudio !== null && areaEstudio !== undefined;
   const hasAreaEfectiva = areaEfectiva !== null && areaEfectiva !== undefined;
   const hasComponents = geojson.features.length > 0;
-  const hasVegetation = (vegetationZones?.features.length ?? 0) > 0;
   const hasDepartamentos = (boundaryData.departamentos?.features.length ?? 0) > 0;
   const hasProvincias = (boundaryData.provincias?.features.length ?? 0) > 0;
   const hasDistritos = (boundaryData.distritos?.features.length ?? 0) > 0;
@@ -1498,25 +1338,6 @@ export default function ProjectMap({
       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
     });
   }, [hasStations, samplingStations]);
-
-  // Distinct vegetation class codes present, in area-descending order.
-  const vegetationClasses = useMemo<{ code: string; name: string; area_ha: number }[]>(() => {
-    if (!hasVegetation || !vegetationZones) return [];
-    const byClass = new Map<string, { name: string; area_ha: number }>();
-    for (const f of vegetationZones.features) {
-      const p = f.properties;
-      if (!p) continue;
-      const code = String(p.code ?? "");
-      if (!code) continue;
-      const existing = byClass.get(code);
-      const area = Number(p.area_ha) || 0;
-      if (existing) existing.area_ha += area;
-      else byClass.set(code, { name: String(p.class_name || `Class ${code}`), area_ha: area });
-    }
-    return [...byClass.entries()]
-      .map(([code, info]) => ({ code, ...info }))
-      .sort((a, b) => b.area_ha - a.area_ha);
-  }, [hasVegetation, vegetationZones]);
 
   // No effect needed to seed defaults — the legend reads
   // `stationKindVisible[k] ?? true`, so any kind not yet in state is
@@ -2004,13 +1825,6 @@ export default function ProjectMap({
                 onToggle: () => toggleGroup("components"),
               }
             : null,
-          ...vegetationClasses.map((vc): LegendItem => ({
-            label: `${vc.name} (${vc.area_ha.toFixed(1)} ha)`,
-            swatch: "dot" as const,
-            color: VEGETATION_CLASS_COLORS[vc.code] ?? "#78909c",
-            visible: vegClassVisible[vc.code] ?? true,
-            onToggle: () => toggleVegClass(vc.code),
-          })),
         ].filter((x): x is LegendItem => x !== null)}
       />
     </div>

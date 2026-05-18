@@ -69,7 +69,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: riversRows, error: riversError },
     { data: receptoresRows, error: receptoresError },
     { data: stationsRows, error: stationsError },
-    { data: vegetationRows, error: vegetationError },
     { data: areaEfectivaRows, error: areaEfectivaError },
     { data: concesionesRows, error: concesionesError },
     { data: contoursRows, error: contoursError },
@@ -108,7 +107,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_streams_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_centros_poblados_for_project", { p_project_id: id, p_buffer_m: 5000 }),
     supabase.rpc("get_sampling_stations_for_project", { p_project_id: id }),
-    supabase.rpc("get_vegetation_for_project", { p_project_id: id }),
     supabase.rpc("get_area_efectiva_for_project", {
       p_project_id: id,
     }),
@@ -212,31 +210,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       },
     })),
   };
-
-   interface VegetationRow {
-     id: string;
-     class_code: string | null;   // MINAM Simbolo (Pj, Br-al, etc.)
-     class_name: string;
-     area_ha: number | null;
-     geom_geojson: string;
-   }
-   const vegetation = (vegetationRows ?? []) as VegetationRow[];
-   const vegetationFc: GeoJSON.FeatureCollection = {
-     type: "FeatureCollection",
-     features: vegetation.map((v) => ({
-       type: "Feature",
-       id: v.id,
-       geometry: JSON.parse(v.geom_geojson) as GeoJSON.Geometry,
-       properties: {
-         class_code: v.class_code,
-         class_name: v.class_name,
-         code: v.class_code ?? v.class_name ?? "",
-         name: v.class_name ?? "",
-         source: "MINAM",
-         area_ha: v.area_ha,
-       },
-     })),
-   };
 
   const concesiones = (concesionesRows ?? []) as ConcesionRow[];
   const concesionesFc: GeoJSON.FeatureCollection = {
@@ -530,7 +503,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             area={area}
             areaEfectivaFeature={areaEfectivaFeature}
             areaEfectiva={areaEfectiva}
-            vegetationFc={vegetationFc}
             concesionesFc={concesionesFc}
             contoursFc={contoursFc}
             peruBoundaryFeature={peruBoundaryFeature}
@@ -545,7 +517,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             riversError={riversError}
             receptoresError={receptoresError}
             stationsError={stationsError}
-            vegetationError={vegetationError}
             concesionesError={concesionesError}
             contoursError={contoursError}
             peruBoundaryError={peruBoundaryError}
@@ -557,7 +528,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             microcuencas={microcuencas}
             receptores={receptores}
             stations={stations}
-            vegetation={vegetation}
             inv={inv}
             grouped={grouped}
             subs={subs}
@@ -585,14 +555,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
 // ── Resumen tab ───────────────────────────────────────────────────────────────
 
-interface VegetationZone {
-  id: string;
-  class_code: string | null;
-  class_name: string;
-  area_ha: number | null;
-  geom_geojson: string;
-}
-
 function ResumenTab({
   p,
   id,
@@ -606,7 +568,6 @@ function ResumenTab({
   area,
   areaEfectivaFeature,
   areaEfectiva,
-  vegetationFc,
   concesionesFc,
   contoursFc,
   peruBoundaryFeature,
@@ -621,7 +582,6 @@ function ResumenTab({
   riversError,
   receptoresError,
   stationsError,
-  vegetationError,
   concesionesError,
   contoursError,
   peruBoundaryError,
@@ -633,7 +593,6 @@ function ResumenTab({
   microcuencas,
   receptores,
   stations,
-  vegetation,
   inv,
   grouped,
   subs,
@@ -651,7 +610,6 @@ function ResumenTab({
   area: AreaEstudioRow | null;
   areaEfectivaFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   areaEfectiva: AreaEfectivaRow | null;
-  vegetationFc: GeoJSON.FeatureCollection;
   concesionesFc: GeoJSON.FeatureCollection;
   contoursFc: GeoJSON.FeatureCollection;
   peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
@@ -666,7 +624,6 @@ function ResumenTab({
   riversError: { message: string } | null;
   receptoresError: { message: string } | null;
   stationsError: { message: string } | null;
-  vegetationError: { message: string } | null;
   concesionesError: { message: string } | null;
   contoursError: { message: string } | null;
   peruBoundaryError: { message: string } | null;
@@ -678,7 +635,6 @@ function ResumenTab({
   microcuencas: MicrocuencaRow[];
   receptores: CentroPobladoRow[];
   stations: SamplingStationRow[];
-  vegetation: VegetationZone[];
   inv: ComponenteInventario[];
   grouped: Record<string, ComponenteInventario[]>;
   subs: RfiSubmission[];
@@ -691,7 +647,6 @@ function ResumenTab({
     riversError?.message ??
     receptoresError?.message ??
     stationsError?.message ??
-    vegetationError?.message ??
     concesionesError?.message ??
     contoursError?.message ??
     peruBoundaryError?.message ??
@@ -733,7 +688,7 @@ function ResumenTab({
         </Card>
       </div>
 
-      {/* Map card — Phase 2 layout (with leyenda, vegetation bar, área efectiva) or plain fallback */}
+      {/* Map card — Phase 2 layout (with leyenda + área efectiva) or plain fallback */}
       {resumenV2 ? (
         <>
           <MapWithLeyenda
@@ -748,7 +703,6 @@ function ResumenTab({
             area={area}
             areaEfectivaFeature={areaEfectivaFeature}
             areaEfectiva={areaEfectiva}
-            vegetationFc={vegetationFc}
             concesionesFc={concesionesFc}
             contoursFc={contoursFc}
             peruBoundaryFeature={peruBoundaryFeature}
@@ -757,10 +711,8 @@ function ResumenTab({
             distritosFc={distritosFc}
             comunidadesFc={comunidadesFc}
             viasFc={viasFc}
-            vegetation={vegetation}
             layerError={layerError}
           />
-          <VegetacionBar vegetation={vegetation} />
           {areaEfectiva && <AreaEfectivaCallout areaEfectiva={areaEfectiva} />}
         </>
       ) : (
@@ -780,7 +732,6 @@ function ResumenTab({
                 areaEstudio={areaFeature}
                 areaEstudioStatus={area?.status ?? null}
                 areaEfectiva={areaEfectivaFeature}
-                vegetationZones={vegetationFc}
                 concesiones={concesionesFc}
                 contours={contoursFc}
                 peruBoundary={peruBoundaryFeature}
@@ -808,12 +759,6 @@ function ResumenTab({
         receptores={receptores}
         stations={stations}
         componentCount={geojson.features.length}
-        vegetationZones={vegetation.map((v) => ({
-          id: String(v.id),
-          class_code: v.class_code?.toString() ?? "",
-          class_name: v.class_name ?? "",
-          area_ha: v.area_ha ?? 0,
-        }))}
       />
 
       {/* Resultados de Monitoreo */}
@@ -946,97 +891,6 @@ function ResumenTab({
   );
 }
 
-// ── Vegetation palette + aggregation ─────────────────────────────────────────
-
-const VEGE_COLORS: Record<string, string> = {
-  "10": "#1b5e20", "20": "#4caf50", "30": "#cddc39", "40": "#ff9800",
-  "80": "#0288d1", "90": "#8bc34a", "95": "#009688",
-  Pj: "#d4a017", Pjh: "#eab308",
-  "Br-al": "#166534", "Br-me": "#15803d", Bp: "#14532d", "Bp-A": "#22c55e",
-  "Bh-MBT": "#0f766e", "Bh-MBS": "#10b981", "Bh-T": "#059669",
-  "Bs-mo": "#a16207", "Bs-MA": "#b45309", "Bs-T": "#92400e",
-  Ma: "#84cc16", "Ma-DS": "#bef264", "Ma-T": "#4d7c0f",
-  Bof: "#2dd4bf", "L/Co": "#38bdf8", Pa: "#14b8a6",
-  Agri: "#f97316", Agro: "#fb923c", Cul: "#fdba74",
-  Pc: "#65a30d", ZU: "#dc2626",
-};
-
-function vegeColor(code: string | null): string {
-  return (code && VEGE_COLORS[code]) ?? "#a8a29e";
-}
-
-function aggregateVege(
-  vegetation: VegetationZone[],
-): { code: string | null; name: string; area: number }[] {
-  const byClass = new Map<string, { code: string | null; name: string; area: number }>();
-  for (const v of vegetation) {
-    const key = v.class_code ?? v.class_name;
-    const entry = byClass.get(key);
-    const area = v.area_ha ?? 0;
-    if (entry) entry.area += area;
-    else byClass.set(key, { code: v.class_code, name: v.class_name, area });
-  }
-  return [...byClass.values()].filter((v) => v.area > 0).sort((a, b) => b.area - a.area);
-}
-
-// ── VegetacionBar ─────────────────────────────────────────────────────────────
-
-function VegetacionBar({ vegetation }: { vegetation: VegetationZone[] }) {
-  const classes = aggregateVege(vegetation);
-  const total = classes.reduce((s, v) => s + v.area, 0);
-  if (!classes.length || total === 0) return null;
-
-  const fmt = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: 1 });
-
-  return (
-    <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-sm font-semibold text-stone-700">
-          Vegetación · WorldCover / MINAM
-        </h2>
-        <span className="text-xs text-stone-400">{fmt(total)} ha total</span>
-      </div>
-
-      {/* Stacked bar */}
-      <div
-        className="flex h-5 w-full overflow-hidden rounded-md"
-        role="img"
-        aria-label="Distribución de cobertura vegetal por clase"
-      >
-        {classes.map((v, i) => (
-          <div
-            key={i}
-            style={{ width: `${(v.area / total) * 100}%`, backgroundColor: vegeColor(v.code) }}
-            title={`${v.name}: ${fmt(v.area)} ha`}
-          />
-        ))}
-      </div>
-
-      {/* Legend */}
-      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-4">
-        {classes.slice(0, 12).map((v, i) => (
-          <div key={i} className="flex min-w-0 items-center gap-1.5">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-              style={{ backgroundColor: vegeColor(v.code) }}
-            />
-            <span className="min-w-0 truncate text-xs text-stone-600">{v.name}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-xs text-stone-400">
-              {((v.area / total) * 100).toFixed(0)}%
-            </span>
-          </div>
-        ))}
-        {classes.length > 12 && (
-          <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-[2px] bg-stone-200" />
-            <span className="text-xs text-stone-400">+{classes.length - 12} más</span>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 // ── MapWithLeyenda ────────────────────────────────────────────────────────────
 
 function MapWithLeyenda({
@@ -1051,7 +905,6 @@ function MapWithLeyenda({
   area,
   areaEfectivaFeature,
   areaEfectiva,
-  vegetationFc,
   concesionesFc,
   contoursFc,
   peruBoundaryFeature,
@@ -1060,7 +913,6 @@ function MapWithLeyenda({
   distritosFc,
   comunidadesFc,
   viasFc,
-  vegetation,
   layerError,
 }: {
   projectId: string;
@@ -1074,7 +926,6 @@ function MapWithLeyenda({
   area: AreaEstudioRow | null;
   areaEfectivaFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   areaEfectiva: AreaEfectivaRow | null;
-  vegetationFc: GeoJSON.FeatureCollection;
   concesionesFc: GeoJSON.FeatureCollection;
   contoursFc: GeoJSON.FeatureCollection;
   peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
@@ -1083,11 +934,8 @@ function MapWithLeyenda({
   distritosFc: GeoJSON.FeatureCollection;
   comunidadesFc: GeoJSON.FeatureCollection;
   viasFc: GeoJSON.FeatureCollection;
-  vegetation: VegetationZone[];
   layerError: string | null;
 }) {
-  const allVegeClasses = aggregateVege(vegetation);
-  const vegeClasses = allVegeClasses.slice(0, 6);
   const areaStatusLabel =
     area?.status === "approved"
       ? "Aprobada"
@@ -1131,7 +979,6 @@ function MapWithLeyenda({
               areaEstudio={areaFeature}
               areaEstudioStatus={area?.status ?? null}
               areaEfectiva={areaEfectivaFeature}
-              vegetationZones={vegetationFc}
               concesiones={concesionesFc}
               contours={contoursFc}
               peruBoundary={peruBoundaryFeature}
@@ -1182,30 +1029,6 @@ function MapWithLeyenda({
             </div>
           )}
 
-          {/* Vegetación */}
-          {vegeClasses.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-stone-400">
-                Vegetación
-              </p>
-              <div className="space-y-1.5">
-                {vegeClasses.map((v, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                      style={{ backgroundColor: vegeColor(v.code) }}
-                    />
-                    <span className="min-w-0 truncate text-[11px] text-stone-600">{v.name}</span>
-                  </div>
-                ))}
-                {allVegeClasses.length > 6 && (
-                  <p className="text-[10px] text-stone-400">
-                    +{allVegeClasses.length - 6} clases más
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </section>
