@@ -23,6 +23,7 @@ import ReportesPanel from "@/components/ReportesPanel";
 import SamplingResultsPanel from "@/components/SamplingResultsPanel";
 import SocialBaselinePanel from "@/components/SocialBaselinePanel";
 import type { SocialBaselineRow } from "@/lib/inei/types";
+import { formatDateTime, formatHa, formatNumber } from "@/lib/format";
 
 const TABS = [
   { id: "resumen", label: "Resumen" },
@@ -476,7 +477,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           </Chip>
           {p.area_total_ha ? (
             <Chip>
-              {p.area_total_ha.toLocaleString("es-PE")} ha totales
+              {formatHa(p.area_total_ha)} ha totales
             </Chip>
           ) : null}
           {p.proyecto_brownfield ? <Chip variant="amber">Brownfield</Chip> : null}
@@ -915,7 +916,7 @@ function ResumenTab({
                   return (
                     <tr key={s.id} className="transition-colors hover:bg-stone-50/50">
                       <td className="px-4 py-3 text-stone-500">
-                        {new Date(s.submitted_at).toLocaleString("es-PE")}
+                        {formatDateTime(s.submitted_at)}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
@@ -985,7 +986,7 @@ function VegetacionBar({ vegetation }: { vegetation: VegetationZone[] }) {
   const total = classes.reduce((s, v) => s + v.area, 0);
   if (!classes.length || total === 0) return null;
 
-  const fmt = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: 1 });
+  const fmt = (n: number): string => formatHa(n);
 
   return (
     <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
@@ -1094,7 +1095,7 @@ function MapWithLeyenda({
         ? "Reemplazada"
         : "Borrador";
 
-  const fmt = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: 1 });
+  const fmt = (n: number): string => formatHa(n);
 
   return (
     <section className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
@@ -1226,7 +1227,7 @@ function AreaEfectivaCallout({ areaEfectiva }: { areaEfectiva: AreaEfectivaRow }
       </div>
       <div className="mt-2 flex items-end gap-1.5">
         <span className="font-serif text-[2.5rem] font-semibold leading-none tracking-tight text-emerald-800">
-          {areaEfectiva.area_ha.toLocaleString("es-PE", { maximumFractionDigits: 2 })}
+          {formatNumber(areaEfectiva.area_ha, { decimals: 2 })}
         </span>
         <span className="mb-0.5 text-sm font-medium text-emerald-600">ha</span>
       </div>

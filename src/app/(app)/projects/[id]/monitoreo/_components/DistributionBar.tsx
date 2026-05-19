@@ -1,3 +1,5 @@
+import { formatInt } from "@/lib/format";
+
 interface DistributionSegment {
   id: string;
   label: string;
@@ -36,7 +38,7 @@ export default function DistributionBar({
           )}
           {total > 0 && (
             <span className="text-xs text-stone-400 tabular-nums">
-              {total.toLocaleString("es-PE")}
+              {formatInt(total)}
               {unit ? ` ${unit}` : ""}
             </span>
           )}
@@ -74,7 +76,7 @@ export default function DistributionBar({
                 />
                 <span className="text-stone-700">{s.label}</span>
                 <span className="text-stone-400 tabular-nums">
-                  {s.value.toLocaleString("es-PE")}
+                  {formatInt(s.value)}
                 </span>
               </li>
             ))}

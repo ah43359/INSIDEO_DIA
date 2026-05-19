@@ -24,6 +24,7 @@ import {
   TABLE_BORDER_THIN,
   TABLE_HEADER_SHADING,
 } from "./styles";
+import { formatInt } from "@/lib/format";
 
 export interface PdtStation {
   station_code: string;
@@ -223,8 +224,8 @@ export function stationTable(
       return new TableRow({
         children: [
           tableCell(s.station_code),
-          tableCell(Math.round(easting).toLocaleString("es-PE")),
-          tableCell(Math.round(northing).toLocaleString("es-PE")),
+          tableCell(formatInt(Math.round(easting))),
+          tableCell(formatInt(Math.round(northing))),
           tableCell(s.referencia ?? "—"),
         ],
       });

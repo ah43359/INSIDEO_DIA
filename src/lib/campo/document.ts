@@ -14,6 +14,7 @@ import {
   ShadingType,
   BorderStyle,
 } from "docx";
+import { formatLongDate } from "@/lib/format";
 
 export type EstadoContrato = "pendiente" | "contactado" | "cotizado" | "contratado";
 
@@ -146,7 +147,7 @@ function spacer(): Paragraph {
 
 export async function buildCampoPlanDocument(data: CampoPlanData): Promise<Buffer> {
   const { projectName, laboratorios, biologicos, inspectores, sociales, notas_generales } = data;
-  const today = new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" });
+  const today = formatLongDate(new Date());
 
   const children = [
     // Cover

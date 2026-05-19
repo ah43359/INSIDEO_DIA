@@ -12,6 +12,7 @@ import {
 } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { formatDate } from "@/lib/format";
 
 interface SamplingResultsPanelProps {
   projectId: string;
@@ -149,7 +150,7 @@ SUE-001,2024-01-15,As,0.03,mg/kg`;
     doc.setFontSize(10);
     doc.text(`Proyecto: ${projectId}`, 20, 30);
     doc.text(`Campoña: ${CAMPAIGN_LABEL[campaign]}`, 20, 36);
-    doc.text(`Fecha: ${new Date().toLocaleDateString("es-PE")}`, 20, 42);
+    doc.text(`Fecha: ${formatDate(new Date())}`, 20, 42);
     
     let y = 55;
     

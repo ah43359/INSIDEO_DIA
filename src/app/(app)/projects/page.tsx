@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import type { Project } from "@/lib/types";
+import { formatDate } from "@/lib/format";
 
 interface ProjectRow extends Project {
   clientes: { razon_social: string; ruc: string } | null;
@@ -115,11 +116,7 @@ export default async function ProjectsPage() {
                   {p.rfi_submissions?.[0]?.count ?? 0}
                 </td>
                 <td className="px-4 py-3.5 text-stone-400">
-                  {new Date(p.updated_at).toLocaleDateString("es-PE", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })}
+                  {formatDate(p.updated_at)}
                 </td>
               </tr>
             ))}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SocialBaselineRow } from "@/lib/inei/types";
+import { formatInt, formatLongDate } from "@/lib/format";
 
 interface Props {
   projectId: string;
@@ -76,12 +77,7 @@ export default function SocialBaselinePanel({
             </p>
             {data?.fetched_at ? (
               <p className="mt-1 text-[11px] text-stone-400">
-                Datos INEI al{" "}
-                {new Date(data.fetched_at).toLocaleDateString("es-PE", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
+                Datos INEI al {formatLongDate(data.fetched_at)}
               </p>
             ) : null}
           </div>
@@ -269,7 +265,7 @@ function Row({ label, value }: { label: string; value: string | null | undefined
 
 function fmt(n: number | null | undefined, unit: string): string | null {
   if (n == null) return null;
-  return `${n.toLocaleString("es-PE")} ${unit}`;
+  return `${formatInt(n)} ${unit}`;
 }
 
 function pct(n: number | null | undefined): string | null {

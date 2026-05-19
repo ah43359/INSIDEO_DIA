@@ -5,6 +5,7 @@ import type {
   SamplingStationRow,
 } from "@/lib/types";
 import AreaEstudioActions from "@/components/AreaEstudioActions";
+import { formatDateTime, formatHa, formatInt } from "@/lib/format";
 
 interface AreaEstudioPanelProps {
   /** Latest área de estudio row (approved if any, else most recent draft). */
@@ -186,14 +187,11 @@ export default function AreaEstudioPanel({
             <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">
               <dt className="text-stone-500">Área</dt>
               <dd className="text-stone-900 tabular-nums">
-                {area.area_ha.toLocaleString("es-PE", {
-                  maximumFractionDigits: 1,
-                })}{" "}
-                ha
+                {formatHa(area.area_ha)} ha
               </dd>
               <dt className="text-stone-500">Generado</dt>
               <dd className="text-stone-900">
-                {new Date(area.generated_at).toLocaleString("es-PE")}
+                {formatDateTime(area.generated_at)}
                 <span className="ml-2 text-xs text-stone-500">
                   ({area.generated_by})
                 </span>
@@ -202,7 +200,7 @@ export default function AreaEstudioPanel({
                 <>
                   <dt className="text-stone-500">Aprobado</dt>
                   <dd className="text-stone-900">
-                    {new Date(area.approved_at).toLocaleString("es-PE")}
+                    {formatDateTime(area.approved_at)}
                   </dd>
                 </>
               ) : null}
@@ -248,7 +246,7 @@ export default function AreaEstudioPanel({
                 <>
                   <dt className="text-stone-500">Área objetivo</dt>
                   <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.target_area_ha?.toLocaleString("es-PE", { maximumFractionDigits: 0 }) ?? "—"} ha
+                    {formatInt(area.inputs_snapshot.target_area_ha)} ha
                   </dd>
                   <dt className="text-stone-500">Umbral de río</dt>
                   <dd className="text-stone-900 tabular-nums">

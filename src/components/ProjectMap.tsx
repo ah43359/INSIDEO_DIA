@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap, type GeoJSONSource, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { formatHa } from "@/lib/format";
 
 // ─── Basemaps ─────────────────────────────────────────────────────────
 // Three options:
@@ -1241,7 +1242,7 @@ export default function ProjectMap({
             <div style="font-weight: 600; margin-bottom: 4px;">${props.nombre}</div>
             <div>Código: ${props.codigo}</div>
             ${props.titular ? `<div>Titular: ${props.titular}</div>` : ""}
-            ${props.area_ha ? `<div>Área: ${Number(props.area_ha).toLocaleString("es-PE", { maximumFractionDigits: 1 })} ha</div>` : ""}
+            ${props.area_ha ? `<div>Área: ${formatHa(props.area_ha)} ha</div>` : ""}
             ${props.estado ? `<div>Estado: ${props.estado}</div>` : ""}
             ${props.tipo ? `<div>Tipo: ${props.tipo}</div>` : ""}
             ${props.is_own ? '<div style="margin-top:4px; color: #d97706; font-weight: 600;">Concesión del proyecto</div>' : ""}
@@ -1856,14 +1857,7 @@ export default function ProjectMap({
             : null,
           hasAreaEfectiva
             ? {
-                label: `Área efectiva (${
-                  areaEfectiva?.properties?.area_ha?.toLocaleString
-                    ? Number(areaEfectiva.properties.area_ha).toLocaleString(
-                        "es-PE",
-                        { maximumFractionDigits: 1 },
-                      )
-                    : "—"
-                } ha)`,
+                label: `Área efectiva (${formatHa(areaEfectiva?.properties?.area_ha)} ha)`,
                 swatch: "dashedLine" as const,
                 color: "#e11d48",
                 visible: groupVisible.efectiva,
