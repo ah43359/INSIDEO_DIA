@@ -5,7 +5,7 @@
 // -----
 //   cd E:/Architecture
 //   set OPENAI_API_KEY=sk-...
-//   set SUPABASE_URL=https://oallvyberanbniakljoq.supabase.co
+//   set SUPABASE_URL=https://mjinbekseqwclpknwzxu.supabase.co
 //   set SUPABASE_SERVICE_ROLE_KEY=eyJ...
 //   npx tsx scripts/dia-corpus/index-cap.ts \
 //     --folder "E:/Architecture/DIA Examples/Cap6" \

@@ -1,7 +1,7 @@
 # INSIDEO DIA — Frontend
 
 Visor de proyectos DIA exploración. Lee del backend Supabase `insideo-dia`
-(proyecto `oallvyberanbniakljoq`, región `sa-east-1`).
+(proyecto `mjinbekseqwclpknwzxu`, región `sa-east-1`).
 
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind 4 · Supabase Auth
 (magic link) · MapLibre GL.
@@ -30,13 +30,13 @@ npm run dev
 
 Variables esperadas:
 
-- `NEXT_PUBLIC_SUPABASE_URL` — `https://oallvyberanbniakljoq.supabase.co`
+- `NEXT_PUBLIC_SUPABASE_URL` — `https://mjinbekseqwclpknwzxu.supabase.co`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — el publishable / anon key
 
 ## Configuración inicial Supabase (una vez)
 
 Antes de loguearse por primera vez, en
-[Auth → URL Configuration](https://supabase.com/dashboard/project/oallvyberanbniakljoq/auth/url-configuration):
+[Auth → URL Configuration](https://supabase.com/dashboard/project/mjinbekseqwclpknwzxu/auth/url-configuration):
 
 - **Site URL:** `http://localhost:3000` (cambiar a la URL de Vercel después).
 - **Redirect URLs:** agregar `http://localhost:3000/auth/callback` y, una vez

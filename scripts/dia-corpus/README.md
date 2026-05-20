@@ -35,12 +35,12 @@ The indexer extracts `project_name` and `instrument_type` from the filename:
 ```bash
 # Windows (cmd.exe / PowerShell)
 set OPENAI_API_KEY=sk-...
-set SUPABASE_URL=https://oallvyberanbniakljoq.supabase.co
+set SUPABASE_URL=https://mjinbekseqwclpknwzxu.supabase.co
 set SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
 # bash / git-bash
 export OPENAI_API_KEY=sk-...
-export SUPABASE_URL=https://oallvyberanbniakljoq.supabase.co
+export SUPABASE_URL=https://mjinbekseqwclpknwzxu.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=eyJ...
 ```
 
