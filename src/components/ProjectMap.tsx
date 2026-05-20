@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap, type GeoJSONSource, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { formatHa } from "@/lib/format";
+import { useAreaEstudioSelection } from "@/context/AreaEstudioSelectionContext";
+import { useStrahlerCatchmentSelection } from "@/context/StrahlerCatchmentContext";
 
 // ─── Basemaps ─────────────────────────────────────────────────────────
 // Three options:
@@ -84,7 +86,9 @@ const LAYER_GROUPS = {
   area:        ["area-estudio-fill", "area-estudio-line"],
   efectiva:    ["area-efectiva-fill", "area-efectiva-line"],
   subbasins:   ["subbasins-fill", "subbasins-line"],
-  microcuencas:["microcuencas-fill", "microcuencas-line", "microcuencas-label"],
+  districtMicrocuencas: ["district-microcuencas-fill", "district-microcuencas-line", "district-microcuencas-selected-fill", "district-microcuencas-selected-line"],
+  strahlerCatchments: ["strahler-catchments-fill", "strahler-catchments-line", "strahler-catchments-selected-fill", "strahler-catchments-selected-line"],
+  catchmentPoint:    ["catchment-point-circle", "catchment-point-stroke", "catchment-point-label"],
   rivers:      ["rivers-line"],
   receptores:  ["receptores-fill", "receptores-label"],
   components:  [
@@ -117,8 +121,12 @@ type LayerGroup = keyof typeof LAYER_GROUPS;
 
 interface ProjectMapProps {
   geojson: GeoJSON.FeatureCollection;
-  /** Microcuencas (Pfafstetter UH) that intersect the project. Optional. */
-  microcuencas?: GeoJSON.FeatureCollection | null;
+  /** All microcuencas within the project district(s), for user selection. Optional. */
+  districtMicrocuencas?: GeoJSON.FeatureCollection | null;
+  /** Strahler-2+ catchment polygons (smoothed) for the study area selection workflow. Optional. */
+  strahlerCatchments?: GeoJSON.FeatureCollection | null;
+  /** Downstream catchment point (1-feature FeatureCollection of a Point). Optional. */
+  catchmentPoint?: GeoJSON.FeatureCollection | null;
   /** Rivers near the project (IGN Carta Nacional 1:100,000, filtered by RPC). Optional. */
   rivers?: GeoJSON.FeatureCollection | null;
   /** Centros poblados that fall in or near the área de estudio. Optional. */
@@ -258,7 +266,9 @@ function asAreaFeatureCollection(
 
 export default function ProjectMap({
   geojson,
-  microcuencas,
+  districtMicrocuencas,
+  strahlerCatchments,
+  catchmentPoint,
   rivers,
   receptores,
   samplingStations,
@@ -289,7 +299,9 @@ export default function ProjectMap({
     area: true,
     efectiva: true,
     subbasins: true,
-    microcuencas: true,
+    districtMicrocuencas: true,
+    strahlerCatchments: true,
+    catchmentPoint: true,
     rivers: true,
     receptores: true,
     components: true,
@@ -305,6 +317,16 @@ export default function ProjectMap({
     contornos: false,
     peruOutline: true,
   });
+  // District microcuenca selection — shared via context with the panel.
+  const { selectedIds, toggle } = useAreaEstudioSelection();
+  const toggleRef = useRef(toggle);
+  useEffect(() => { toggleRef.current = toggle; }, [toggle]);
+
+  // Strahler catchment selection — parallel context for the strahler workflow.
+  const { selectedIds: strahlerSelectedIds, toggle: strahlerToggle } = useStrahlerCatchmentSelection();
+  const strahlerToggleRef = useRef(strahlerToggle);
+  useEffect(() => { strahlerToggleRef.current = strahlerToggle; }, [strahlerToggle]);
+
   // Sampling-station kinds: each kind togglable independently.
   const [stationKindVisible, setStationKindVisible] = useState<Record<string, boolean>>({});
   // Vegetation classes: each class togglable independently.
@@ -383,46 +405,133 @@ export default function ProjectMap({
     // If it never fires the overlay stays — open DevTools console for clues.
     map.on("load", () => {
       setMapLoaded(true);
-      // Layer order (bottom → top): microcuencas, área de estudio,
-      // rivers, components. Rivers sit *above* the área de estudio fill
-      // so they remain visible inside the polygon.
-      map.addSource("microcuencas", {
+      // District microcuencas — selectable polygons for the área de estudio
+      // workflow. Two sources: one for all district UH, one for the selection.
+      map.addSource("district-microcuencas", {
         type: "geojson",
-        data: microcuencas ?? EMPTY_FC,
+        data: districtMicrocuencas ?? EMPTY_FC,
+        generateId: false,
+      });
+      map.addSource("district-microcuencas-selected", {
+        type: "geojson",
+        data: EMPTY_FC,
       });
       map.addLayer({
-        id: "microcuencas-fill",
+        id: "district-microcuencas-fill",
         type: "fill",
-        source: "microcuencas",
+        source: "district-microcuencas",
         paint: {
-          "fill-color": "#0ea5e9",
-          "fill-opacity": 0.08,
+          "fill-color": "#38bdf8", // sky-400
+          "fill-opacity": 0.05,
         },
       });
       map.addLayer({
-        id: "microcuencas-line",
+        id: "district-microcuencas-line",
         type: "line",
-        source: "microcuencas",
+        source: "district-microcuencas",
         paint: {
-          "line-color": "#0369a1",
-          "line-width": 1,
-          "line-dasharray": [3, 2],
+          "line-color": "#0284c7", // sky-600
+          "line-width": 0.8,
+          "line-dasharray": [4, 3],
+          "line-opacity": 0.7,
         },
       });
       map.addLayer({
-        id: "microcuencas-label",
-        type: "symbol",
-        source: "microcuencas",
-        layout: {
-          "text-field": ["get", "pfafstetter"],
-          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
-          "text-size": 11,
-        },
+        id: "district-microcuencas-selected-fill",
+        type: "fill",
+        source: "district-microcuencas-selected",
         paint: {
-          "text-color": "#0369a1",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1.2,
+          "fill-color": "#38bdf8", // sky-400
+          "fill-opacity": 0.35,
         },
+      });
+      map.addLayer({
+        id: "district-microcuencas-selected-line",
+        type: "line",
+        source: "district-microcuencas-selected",
+        paint: {
+          "line-color": "#0369a1", // sky-700
+          "line-width": 2,
+        },
+      });
+
+      // Click on a district microcuenca → toggle selection
+      map.on("click", "district-microcuencas-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const id = Number(f.properties?.id);
+        if (!Number.isFinite(id)) return;
+        toggleRef.current(id);
+      });
+      map.on("mouseenter", "district-microcuencas-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "district-microcuencas-fill", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      // ── Strahler catchments — selectable polygons for the strahler workflow ──
+      map.addSource("strahler-catchments", {
+        type: "geojson",
+        data: strahlerCatchments ?? EMPTY_FC,
+        generateId: false,
+      });
+      map.addSource("strahler-catchments-selected", {
+        type: "geojson",
+        data: EMPTY_FC,
+      });
+      map.addLayer({
+        id: "strahler-catchments-fill",
+        type: "fill",
+        source: "strahler-catchments",
+        paint: {
+          "fill-color": "#0d9488", // teal-600
+          "fill-opacity": 0.07,
+        },
+      });
+      map.addLayer({
+        id: "strahler-catchments-line",
+        type: "line",
+        source: "strahler-catchments",
+        paint: {
+          "line-color": "#0f766e", // teal-700
+          "line-width": 1,
+          "line-dasharray": [4, 3],
+          "line-opacity": 0.8,
+        },
+      });
+      map.addLayer({
+        id: "strahler-catchments-selected-fill",
+        type: "fill",
+        source: "strahler-catchments-selected",
+        paint: {
+          "fill-color": "#0d9488", // teal-600
+          "fill-opacity": 0.30,
+        },
+      });
+      map.addLayer({
+        id: "strahler-catchments-selected-line",
+        type: "line",
+        source: "strahler-catchments-selected",
+        paint: {
+          "line-color": "#134e4a", // teal-900
+          "line-width": 2,
+        },
+      });
+
+      // Click on a strahler catchment → toggle strahler selection
+      map.on("click", "strahler-catchments-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const id = Number(f.properties?.id);
+        if (!Number.isFinite(id)) return;
+        strahlerToggleRef.current(id);
+      });
+      map.on("mouseenter", "strahler-catchments-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "strahler-catchments-fill", () => {
+        map.getCanvas().style.cursor = "";
       });
 
       map.addSource("area-estudio", {
@@ -685,10 +794,9 @@ export default function ProjectMap({
         },
       });
 
-      // Rivers — width scales with Strahler order when available
-      // (HydroRIVERS). IGN Carta Nacional streams have no Strahler
-      // attribute; in that case length_km drives a synthetic order so
-      // long named rivers still read as main channels.
+      // Rivers — IGN Carta Nacional only (HydroRIVERS is excluded from display).
+      // Width scales with strahler_order (computed by compute_strahler.py);
+      // falls back to a length_km-derived proxy for segments not yet ordered.
       map.addSource("rivers", {
         type: "geojson",
         data: rivers ?? EMPTY_FC,
@@ -721,6 +829,118 @@ export default function ProjectMap({
             9, 4.0,
           ],
         },
+      });
+
+      // ── Catchment point — the downstream confluence anchor ─────────────────
+      // A single Point feature (or empty) showing where the project's
+      // receiving river meets a Strahler ≥ 3 river. Drawn above the rivers
+      // so the marker is visible against the blue lines.
+      map.addSource("catchment-point", {
+        type: "geojson",
+        data: catchmentPoint ?? EMPTY_FC,
+      });
+      // Color expressions: downstream = amber, upstream = sky.
+      // Inline arrays are accepted by MapLibre's paint-property spec at runtime.
+      const strokeColor = [
+        "match", ["get", "kind"],
+        "upstream",   "#0369a1", // sky-700
+        /* downstream */ "#b45309", // amber-700
+      ] as const;
+      const fillColor = [
+        "match", ["get", "kind"],
+        "upstream",   "#0ea5e9", // sky-500
+        /* downstream */ "#d97706", // amber-600
+      ] as const;
+      const textColor = [
+        "match", ["get", "kind"],
+        "upstream",   "#0c4a6e", // sky-900
+        /* downstream */ "#78350f", // amber-900
+      ] as const;
+      map.addLayer({
+        id: "catchment-point-stroke",
+        type: "circle",
+        source: "catchment-point",
+        paint: {
+          "circle-radius": 11,
+          "circle-color": "#ffffff",
+          "circle-opacity": 1,
+          "circle-stroke-color": strokeColor,
+          "circle-stroke-width": 2,
+        },
+      });
+      map.addLayer({
+        id: "catchment-point-circle",
+        type: "circle",
+        source: "catchment-point",
+        paint: {
+          "circle-radius": 6,
+          "circle-color": fillColor,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+        },
+      });
+      map.addLayer({
+        id: "catchment-point-label",
+        type: "symbol",
+        source: "catchment-point",
+        layout: {
+          "text-field": ["concat", "Punto de control · ", ["get", "label"]],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+          "text-size": 11,
+          "text-offset": [0, 1.4],
+          "text-anchor": "top",
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": textColor,
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.6,
+        },
+      });
+      // Click → popup with full metadata
+      map.on("click", "catchment-point-circle", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const props = f.properties as Record<string, unknown>;
+        const kind = (props.kind as string) ?? "downstream";
+        const isUp = kind === "upstream";
+        const title = isUp
+          ? "Punto de control aguas arriba"
+          : "Punto de control aguas abajo";
+        const distLabel = isUp ? "Aguas arriba del AE" : "Aguas abajo del AE";
+        const titleColor = isUp ? "#0c4a6e" : "#78350f";
+        const recv = (props.receiving_nombre as string | null) || "(sin nombre)";
+        const recvS = props.receiving_strahler ?? "?";
+        const conf = (props.confluent_nombre as string | null) || "(sin nombre)";
+        const confS = props.confluent_strahler ?? "?";
+        const fmt = (m: unknown): string => {
+          if (m == null) return "—";
+          const n = Number(m);
+          if (!Number.isFinite(n)) return "—";
+          return n >= 1000 ? `${(n / 1000).toFixed(1)} km` : `${n.toFixed(0)} m`;
+        };
+        const html = `
+          <div style="font-family: system-ui, sans-serif; font-size: 12px; min-width: 240px;">
+            <div style="font-weight: 600; color: ${titleColor}; margin-bottom: 4px;">
+              ${title}
+            </div>
+            <table style="border-collapse: collapse; font-size: 11px;">
+              <tr><td style="color:#78716c; padding-right:8px;">Río receptor</td><td>${recv} (Strahler ${recvS})</td></tr>
+              <tr><td style="color:#78716c; padding-right:8px;">Confluye con</td><td>${conf} (Strahler ${confS})</td></tr>
+              <tr><td style="color:#78716c; padding-right:8px;">${distLabel}</td><td>${fmt(props.distance_from_ae_m)}</td></tr>
+              <tr><td style="color:#78716c; padding-right:8px;">Ruta total</td><td>${fmt(props.path_length_m)}</td></tr>
+            </table>
+          </div>`;
+        new maplibregl.Popup({ closeButton: true, maxWidth: "300px" })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+      map.on("mouseenter", "catchment-point-circle", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "catchment-point-circle", () => {
+        map.getCanvas().style.cursor = "";
       });
 
       // Curvas de nivel — IGN Carta Nacional 1:100,000 contours, clipped
@@ -1092,13 +1312,15 @@ export default function ProjectMap({
       if (areaEstudio) {
         extendFromGeometry(areaEstudio.geometry);
       }
-      if (!extended && microcuencas?.features.length) {
-        for (const f of microcuencas.features) {
+      if (!extended) {
+        for (const f of geojson.features) {
           extendFromGeometry(f.geometry);
         }
       }
-      if (!extended) {
-        for (const f of geojson.features) {
+      // Always include the catchment point in the initial view so the user
+      // sees the full project → control-point context on page load.
+      if (catchmentPoint?.features.length) {
+        for (const f of catchmentPoint.features) {
           extendFromGeometry(f.geometry);
         }
       }
@@ -1213,25 +1435,6 @@ export default function ProjectMap({
           .addTo(map);
       });
 
-      // Microcuenca popup (Pfafstetter + nombre)
-      map.on("click", "microcuencas-fill", (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
-        const props = f.properties as Record<string, unknown>;
-        const areaKm2 = props.area_km2 != null ? Number(props.area_km2).toFixed(1) : null;
-        const html = `
-          <div style="font-family: system-ui, sans-serif; font-size: 12px;">
-            <div style="font-weight: 600; margin-bottom: 4px;">UH ${props.pfafstetter}</div>
-            ${props.nombre ? `<div>${props.nombre}</div>` : ""}
-            <div>Nivel ${props.nivel}</div>
-            ${areaKm2 ? `<div>${areaKm2} km²</div>` : ""}
-          </div>`;
-        new maplibregl.Popup({ closeButton: true })
-          .setLngLat(e.lngLat)
-          .setHTML(html)
-          .addTo(map);
-      });
-
       // Concesión minera popup
       map.on("click", "concesiones-fill", (e) => {
         const f = e.features?.[0];
@@ -1301,8 +1504,14 @@ export default function ProjectMap({
     const compSrc = map.getSource("components") as GeoJSONSource | undefined;
     if (compSrc) compSrc.setData(geojson);
 
-    const cuencasSrc = map.getSource("microcuencas") as GeoJSONSource | undefined;
-    if (cuencasSrc) cuencasSrc.setData(microcuencas ?? EMPTY_FC);
+    const districtCuencasSrc = map.getSource("district-microcuencas") as GeoJSONSource | undefined;
+    if (districtCuencasSrc) districtCuencasSrc.setData(districtMicrocuencas ?? EMPTY_FC);
+
+    const strahlerSrc = map.getSource("strahler-catchments") as GeoJSONSource | undefined;
+    if (strahlerSrc) strahlerSrc.setData(strahlerCatchments ?? EMPTY_FC);
+
+    const catchmentPointSrc = map.getSource("catchment-point") as GeoJSONSource | undefined;
+    if (catchmentPointSrc) catchmentPointSrc.setData(catchmentPoint ?? EMPTY_FC);
 
     const riversSrc = map.getSource("rivers") as GeoJSONSource | undefined;
     if (riversSrc) riversSrc.setData(rivers ?? EMPTY_FC);
@@ -1364,7 +1573,7 @@ export default function ProjectMap({
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, microcuencas, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData, comunidades, vias]);
+  }, [geojson, districtMicrocuencas, strahlerCatchments, catchmentPoint, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData, comunidades, vias]);
 
   // Separate effect specifically for boundary data updates
   useEffect(() => {
@@ -1385,6 +1594,36 @@ export default function ProjectMap({
       distSrc.setData(boundaryData.distritos ?? EMPTY_FC);
     }
   }, [boundaryData]);
+
+  // Reactively update the selected district microcuencas source.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const src = map.getSource("district-microcuencas-selected") as GeoJSONSource | undefined;
+    if (!src || !districtMicrocuencas) return;
+    const selected: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: districtMicrocuencas.features.filter(
+        (f) => selectedIds.has(Number(f.properties?.id)),
+      ),
+    };
+    src.setData(selected);
+  }, [selectedIds, districtMicrocuencas]);
+
+  // Reactively update the selected strahler catchments source.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const src = map.getSource("strahler-catchments-selected") as GeoJSONSource | undefined;
+    if (!src || !strahlerCatchments) return;
+    const selected: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: strahlerCatchments.features.filter(
+        (f) => strahlerSelectedIds.has(Number(f.properties?.id)),
+      ),
+    };
+    src.setData(selected);
+  }, [strahlerSelectedIds, strahlerCatchments]);
 
   // Apply group visibility toggles to the underlying maplibre layers.
   useEffect(() => {
@@ -1456,7 +1695,9 @@ export default function ProjectMap({
   const toggleVegClass = (c: string) =>
     setVegClassVisible((prev) => ({ ...prev, [c]: !prev[c] }));
 
-  const hasMicrocuencas = (microcuencas?.features.length ?? 0) > 0;
+  const hasDistrictMicrocuencas = (districtMicrocuencas?.features.length ?? 0) > 0;
+  const hasStrahlerCatchments = (strahlerCatchments?.features.length ?? 0) > 0;
+  const hasCatchmentPoint = (catchmentPoint?.features.length ?? 0) > 0;
   const hasRivers = (rivers?.features.length ?? 0) > 0;
   const hasReceptores = (receptores?.features.length ?? 0) > 0;
   const hasStations = (samplingStations?.features.length ?? 0) > 0;
@@ -1873,13 +2114,31 @@ export default function ProjectMap({
                 onToggle: () => toggleGroup("subbasins"),
               }
             : null,
-          hasMicrocuencas
+          hasDistrictMicrocuencas
             ? {
-                label: "Microcuencas (UH ANA)",
-                swatch: "dashedLine" as const,
-                color: "#0369a1",
-                visible: groupVisible.microcuencas,
-                onToggle: () => toggleGroup("microcuencas"),
+                label: `Microcuencas del distrito${selectedIds.size > 0 ? ` (${selectedIds.size} sel.)` : ""}`,
+                swatch: "area" as const,
+                color: "#0284c7",
+                visible: groupVisible.districtMicrocuencas,
+                onToggle: () => toggleGroup("districtMicrocuencas"),
+              }
+            : null,
+          hasStrahlerCatchments
+            ? {
+                label: `Cuencas Strahler ≥ 2${strahlerSelectedIds.size > 0 ? ` (${strahlerSelectedIds.size} sel.)` : ""}`,
+                swatch: "area" as const,
+                color: "#0d9488",
+                visible: groupVisible.strahlerCatchments,
+                onToggle: () => toggleGroup("strahlerCatchments"),
+              }
+            : null,
+          hasCatchmentPoint
+            ? {
+                label: "Puntos de control (aguas arriba / abajo)",
+                swatch: "dot" as const,
+                color: "#d97706",
+                visible: groupVisible.catchmentPoint,
+                onToggle: () => toggleGroup("catchmentPoint"),
               }
             : null,
           hasRivers

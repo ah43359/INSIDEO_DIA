@@ -21,56 +21,71 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-// ─── Derive (enqueue) ────────────────────────────────────────────────────
+// ─── Save area de estudio from selected microcuencas ─────────────────────
 
-export type DeriveStrategy = "subbasin_envelope" | "buffer_drainage";
-
-export interface DeriveOptions {
-  strategy?: DeriveStrategy;
-  /** subbasin_envelope: stop expanding when union reaches this area. */
-  targetAreaHa?: number;
-  /** subbasin_envelope: flow-accum threshold for stream extraction. */
-  streamThresholdCells?: number;
-  /** subbasin_envelope: hard cap on neighbour expansion. */
-  maxHops?: number;
-  /** buffer_drainage (legacy): DEM-based drainage source. */
-  drainage?: "none" | "local_dem";
-  /** buffer_drainage (legacy): buffer around components, m. */
-  receptorBufferM?: number;
-  /** buffer_drainage (legacy): drop microcuencas larger than this, km². */
-  maxMicrocuencaAreaKm2?: number;
-  /** buffer_drainage (legacy): clip upstream catchment at this distance, km. */
-  maxUpstreamKm?: number;
+export async function saveAreaEstudioFromMicrocuencas(
+  projectId: string,
+  microcuencaIds: number[],
+): Promise<ActionResult> {
+  if (microcuencaIds.length === 0) {
+    return { ok: false, message: "Seleccione al menos una microcuenca." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_area_estudio_from_microcuencas", {
+    p_project_id: projectId,
+    p_microcuenca_ids: microcuencaIds,
+  });
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
 }
 
-export async function enqueueDeriveAreaEstudio(
+// ─── Save area de estudio from Strahler-filtered catchments ──────────────
+
+export async function saveAreaEstudioFromStrahlerCatchments(
   projectId: string,
-  options: DeriveOptions = {},
+  catchmentIds: number[],
 ): Promise<ActionResult> {
+  if (catchmentIds.length === 0) {
+    return { ok: false, message: "Seleccione al menos una cuenca." };
+  }
   const supabase = await createClient();
-  const strategy = options.strategy ?? "subbasin_envelope";
-  // The RPC's payload column accepts the python script's argument names
-  // verbatim — see worker.process_derive.
-  const payload: Record<string, unknown> = { strategy };
+  const { error } = await supabase.rpc(
+    "save_area_estudio_from_strahler_catchments",
+    { p_project_id: projectId, p_microcuenca_ids: catchmentIds },
+  );
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
 
-  if (strategy === "subbasin_envelope") {
-    if (options.targetAreaHa != null) payload.target_area_ha = options.targetAreaHa;
-    if (options.streamThresholdCells != null) payload.stream_threshold_cells = options.streamThresholdCells;
-    if (options.maxHops != null) payload.max_hops = options.maxHops;
-  } else {
-    payload.drainage = options.drainage ?? "local_dem";
-    if (options.receptorBufferM != null) payload.receptor_buffer_m = options.receptorBufferM;
-    if (options.maxMicrocuencaAreaKm2 != null) payload.max_microcuenca_area_km2 = options.maxMicrocuencaAreaKm2;
-    if (options.maxUpstreamKm != null) payload.max_upstream_km = options.maxUpstreamKm;
-  }
+// ─── Enqueue: study area watershed between upstream + downstream CPs ────
 
-  const { data, error } = await supabase.rpc("enqueue_derive_area_estudio", {
+export interface BetweenCpsOptions {
+  /** Minimum metres past the AE polygon for the downstream control point. */
+  minDownstreamM?: number;
+  /** Minimum metres past the AE polygon for the upstream control point. */
+  minUpstreamM?: number;
+  /** D8 cell must be within this distance of a junction node to qualify. */
+  junctionProxM?: number;
+  /** Minimum number of distinct rivers meeting at a node to qualify. */
+  minJunctionArity?: number;
+}
+
+export async function enqueueBetweenCpsStudyArea(
+  projectId: string,
+  options: BetweenCpsOptions = {},
+): Promise<ActionResult> {
+  const payload: Record<string, unknown> = {};
+  if (options.minDownstreamM != null) payload.min_downstream_m = options.minDownstreamM;
+  if (options.minUpstreamM   != null) payload.min_upstream_m   = options.minUpstreamM;
+  if (options.junctionProxM  != null) payload.junction_prox_m  = options.junctionProxM;
+  if (options.minJunctionArity != null) payload.min_junction_arity = options.minJunctionArity;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("enqueue_between_cps_study_area", {
     p_project_id: projectId,
-    p_options: payload,
+    p_payload: payload,
   });
-  if (error) {
-    return { ok: false, message: error.message };
-  }
+  if (error) return { ok: false, message: error.message };
   return { ok: true, jobId: String(data) };
 }
 
@@ -79,9 +94,7 @@ export async function enqueueDeriveAreaEstudio(
 export interface ProposeOptions {
   receptorBufferM?: number;
   maxStationsPerKind?: number;
-  /** ``"yes"`` / ``"no"`` overrides the auto-detected explosives flag. */
   forceExplosives?: "yes" | "no";
-  /** Restrict proposal to specific station kinds (e.g. only the missing ones). */
   onlyKinds?: readonly string[];
 }
 
@@ -142,8 +155,6 @@ export async function enqueueUploadAreaEstudio(
   const sourceCrs = (formData.get("sourceCrs") as string | null)?.trim() || null;
   const notes = (formData.get("notes") as string | null)?.trim() || null;
 
-  // Object key: <projectId>/<timestamp>-<safe-name>. Avoids collisions
-  // and groups uploads per project.
   const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
   const objectKey = `${projectId}/${Date.now()}-${safeName}`;
 
@@ -217,19 +228,3 @@ export async function deleteAreaEfectiva(
   if (error) return { ok: false, message: error.message };
   return { ok: true };
 }
-
-// ─── Cancel a stuck job ────────────────────────────────────────────────
-
-export async function cancelDerivationJob(
-  jobId: string,
-): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("cancel_derivation_job", {
-    p_job_id: jobId,
-  });
-  if (error) {
-    return { ok: false, message: error.message };
-  }
-  return { ok: true };
-}
-

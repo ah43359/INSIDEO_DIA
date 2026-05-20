@@ -112,6 +112,9 @@ export interface MicrocuencaRow {
   geom_geojson: string;
 }
 
+/** Catchment polygon associated with a Strahler-2+ river, from get_strahler_catchments_for_project. */
+export type StrahlerCatchmentRow = MicrocuencaRow;
+
 export type AreaEstudioStatus = "draft" | "approved" | "superseded";
 export type AreaEstudioGeneratedBy = "auto" | "manual";
 
@@ -132,6 +135,45 @@ export interface AreaEstudioInputsSnapshot {
   max_microcuenca_area_km2?: number | null;
   receptor_buffer_m?: number;
   drainage_provider?: string;
+  // microcuenca_selection fields
+  microcuencas_selected_ids?: number[];
+  microcuencas_selected_pfafstetter?: string[];
+  microcuencas_count?: number;
+  // between_control_points fields
+  upstream_min_distance_m?: number;
+  downstream_min_distance_m?: number;
+  upstream_catchment_point?: { x: number; y: number; receiving_river_nombre?: string | null; confluent_river_nombre?: string | null } | null;
+  downstream_catchment_point?: { x: number; y: number; receiving_river_nombre?: string | null; confluent_river_nombre?: string | null } | null;
+  method?: string;
+}
+
+export type CatchmentPointKind = "upstream" | "downstream";
+
+/**
+ * Confluence anchor for hydrographic monitoring. A project can have up to
+ * two: an `upstream` baseline reference (≥ 2 km upstream of área efectiva)
+ * and a `downstream` impact-reference (≥ 5 km downstream). Computed
+ * offline by `skills/reference-layers/scripts/compute_catchment_point.py`
+ * and stored in `public.project_catchment_points`.
+ */
+export interface CatchmentPointRow {
+  kind: CatchmentPointKind;
+  /** GeoJSON Point as text. */
+  geom_geojson: string;
+  receiving_river_id: number | null;
+  receiving_river_nombre: string | null;
+  receiving_strahler: number | null;
+  confluent_river_id: number | null;
+  confluent_river_nombre: string | null;
+  confluent_strahler: number | null;
+  /** Total flow-path distance from project centroid to catchment point (m). */
+  path_length_m: number | null;
+  /** Distance along the flow path from the AE polygon exit to the catchment point (m). */
+  distance_from_ae_m: number | null;
+  /** Minimum-distance threshold used at compute time (m). */
+  min_distance_m: number | null;
+  used_neighbour_districts: boolean;
+  computed_at: string;
 }
 
 export interface RiverRow {

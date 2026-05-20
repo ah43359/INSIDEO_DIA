@@ -87,7 +87,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <p className="border-t border-stone-100 pt-6 text-xs leading-relaxed text-stone-500">
             Crea tu usuario en{" "}
             <a
-              href="https://supabase.com/dashboard/project/moaltxlpdysqeuujccis/auth/users"
+              href="https://supabase.com/dashboard/project/oallvyberanbniakljoq/auth/users"
               target="_blank"
               rel="noreferrer"
               className="font-medium text-emerald-700 underline decoration-emerald-700/30 underline-offset-2 hover:text-emerald-900"

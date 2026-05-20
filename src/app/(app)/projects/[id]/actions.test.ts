@@ -15,8 +15,6 @@
 import { describe, expect, it } from "vitest";
 import type {
   ActionResult,
-  DeriveOptions,
-  DeriveStrategy,
   ProposeOptions,
 } from "./actions";
 
@@ -32,37 +30,6 @@ const ALLOWED_EXTENSIONS = new Set([
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 describe("Supabase RPC contract — actions.ts", () => {
-  describe("enqueueDeriveAreaEstudio", () => {
-    it("accepts valid subbasin_envelope options", () => {
-      const opts: DeriveOptions = {
-        strategy: "subbasin_envelope",
-        targetAreaHa: 500,
-        streamThresholdCells: 1000,
-        maxHops: 50,
-      };
-      expect(opts.strategy).toBe("subbasin_envelope");
-      expect(opts.targetAreaHa).toBe(500);
-    });
-
-    it("accepts valid buffer_drainage options", () => {
-      const opts: DeriveOptions = {
-        strategy: "buffer_drainage",
-        drainage: "local_dem",
-        receptorBufferM: 500,
-        maxMicrocuencaAreaKm2: 50,
-        maxUpstreamKm: 10,
-      };
-      expect(opts.strategy).toBe("buffer_drainage");
-      expect(opts.drainage).toBe("local_dem");
-    });
-
-    it("defaults to subbasin_envelope when strategy is undefined", () => {
-      const opts: DeriveOptions = {};
-      const strategy: DeriveStrategy = opts.strategy ?? "subbasin_envelope";
-      expect(strategy).toBe("subbasin_envelope");
-    });
-  });
-
   describe("enqueueProposeStations", () => {
     it("accepts valid receptor buffer options", () => {
       const opts: ProposeOptions = {
@@ -123,31 +90,6 @@ describe("Supabase RPC contract — actions.ts", () => {
   });
 
   describe("RPC snake_case payload contract", () => {
-    it("DeriveOptions camelCase → expected snake_case DB columns", () => {
-      const opts: DeriveOptions = {
-        targetAreaHa: 100,
-        streamThresholdCells: 500,
-        maxHops: 30,
-        receptorBufferM: 1000,
-        maxMicrocuencaAreaKm2: 20,
-        maxUpstreamKm: 5,
-      };
-
-      const expectedSnakeCase: Record<string, string> = {
-        targetAreaHa: "target_area_ha",
-        streamThresholdCells: "stream_threshold_cells",
-        maxHops: "max_hops",
-        receptorBufferM: "receptor_buffer_m",
-        maxMicrocuencaAreaKm2: "max_microcuenca_area_km2",
-        maxUpstreamKm: "max_upstream_km",
-      };
-
-      for (const [camel, snake] of Object.entries(expectedSnakeCase)) {
-        expect(camel in opts).toBe(true);
-        expect(snake).toMatch(/^[a-z0-9_]+$/);
-      }
-    });
-
     it("ProposeOptions camelCase → expected snake_case DB columns", () => {
       const opts: ProposeOptions = {
         receptorBufferM: 500,

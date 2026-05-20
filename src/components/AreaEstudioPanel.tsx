@@ -1,10 +1,15 @@
 import type {
   AreaEstudioRow,
+  CatchmentPointRow,
   CentroPobladoRow,
   MicrocuencaRow,
   SamplingStationRow,
+  StrahlerCatchmentRow,
 } from "@/lib/types";
 import AreaEstudioActions from "@/components/AreaEstudioActions";
+import MicrocuencaSelectionList from "@/components/MicrocuencaSelectionList";
+import StrahlerCatchmentList from "@/components/StrahlerCatchmentList";
+import StudyAreaWatershedForm from "@/components/StudyAreaWatershedForm";
 import { formatDateTime, formatHa, formatInt } from "@/lib/format";
 
 interface AreaEstudioPanelProps {
@@ -12,6 +17,14 @@ interface AreaEstudioPanelProps {
   area: AreaEstudioRow | null;
   /** Microcuencas that intersect the project (independent of any draft). */
   microcuencas: MicrocuencaRow[];
+  /** All microcuencas within the project's district(s), for the selection workflow. */
+  districtMicrocuencas: MicrocuencaRow[];
+  /** Strahler-2+ catchment polygons for the study area selection workflow. */
+  strahlerCatchments: StrahlerCatchmentRow[];
+  /** Upstream confluence anchor (baseline monitoring) — null if not computed / not found. */
+  upstreamCp: CatchmentPointRow | null;
+  /** Downstream confluence anchor (post-impact monitoring) — null if not computed. */
+  downstreamCp: CatchmentPointRow | null;
   /** Centros poblados within the área de estudio + buffer. */
   receptores: CentroPobladoRow[];
   /** Proposed sampling stations (current draft + approved). */
@@ -129,6 +142,10 @@ function groupStations(stations: SamplingStationRow[]): PanelStationGroup[] {
 export default function AreaEstudioPanel({
   area,
   microcuencas,
+  districtMicrocuencas,
+  strahlerCatchments,
+  upstreamCp,
+  downstreamCp,
   receptores,
   stations,
   projectId,
@@ -178,6 +195,35 @@ export default function AreaEstudioPanel({
         partir de los impactos.
       </p>
 
+      <div className="mb-4 space-y-4">
+        <StrahlerCatchmentList
+          catchments={strahlerCatchments}
+          projectId={projectId}
+        />
+        {(upstreamCp || downstreamCp) && (
+          <div className="space-y-2">
+            {upstreamCp && <CatchmentPointCallout catchmentPoint={upstreamCp} />}
+            {downstreamCp && <CatchmentPointCallout catchmentPoint={downstreamCp} />}
+          </div>
+        )}
+        <StudyAreaWatershedForm
+          projectId={projectId}
+          defaultMinUpstreamM={upstreamCp?.min_distance_m ?? null}
+          defaultMinDownstreamM={downstreamCp?.min_distance_m ?? null}
+        />
+        <details className="rounded-md border border-stone-200">
+          <summary className="cursor-pointer select-none px-3 py-2 text-xs text-stone-500 hover:bg-stone-50">
+            Selección alternativa — Microcuencas del distrito (Pfafstetter)
+          </summary>
+          <div className="px-3 pb-3 pt-2">
+            <MicrocuencaSelectionList
+              districtMicrocuencas={districtMicrocuencas}
+              projectId={projectId}
+            />
+          </div>
+        </details>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
@@ -204,17 +250,19 @@ export default function AreaEstudioPanel({
                   </dd>
                 </>
               ) : null}
-              <dt className="text-stone-500">Buffer receptor</dt>
-              <dd className="text-stone-900 tabular-nums">
-                {area.inputs_snapshot.receptor_buffer_m} m
-              </dd>
-              <dt className="text-stone-500">Drenaje</dt>
+              <dt className="text-stone-500">Estrategia</dt>
               <dd className="text-stone-900 font-mono text-xs">
-                {area.inputs_snapshot.drainage_provider}
+                {area.inputs_snapshot.strategy === "between_control_points"
+                  ? "Cuenca entre puntos de control"
+                  : area.inputs_snapshot.strategy === "strahler_catchment_selection"
+                    ? "Cuencas Strahler ≥ 2"
+                    : area.inputs_snapshot.strategy === "microcuenca_selection"
+                      ? "Selección de microcuencas"
+                      : area.inputs_snapshot.strategy ?? "—"}
               </dd>
               <dt className="text-stone-500">Componentes</dt>
               <dd className="text-stone-900 tabular-nums">
-                {area.inputs_snapshot.components_count}
+                {area.inputs_snapshot.components_count ?? componentCount}
               </dd>
             </dl>
           ) : (
@@ -236,13 +284,31 @@ export default function AreaEstudioPanel({
             <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">
               <dt className="text-stone-500">Estrategia</dt>
               <dd className="text-stone-900 font-mono text-xs">
-                {area.inputs_snapshot.strategy === "subbasin_envelope"
-                  ? "Sub-cuencas (ridgelines)"
-                  : area.inputs_snapshot.strategy === "buffer_drainage"
-                    ? "Buffer + drenaje (legacy)"
-                    : area.inputs_snapshot.strategy ?? "—"}
+                {area.inputs_snapshot.strategy === "strahler_catchment_selection"
+                  ? "Cuencas Strahler ≥ 2"
+                  : area.inputs_snapshot.strategy === "microcuenca_selection"
+                    ? "Selección de microcuencas"
+                    : area.inputs_snapshot.strategy === "subbasin_envelope"
+                      ? "Sub-cuencas (ridgelines)"
+                      : area.inputs_snapshot.strategy === "buffer_drainage"
+                        ? "Buffer + drenaje (legacy)"
+                        : area.inputs_snapshot.strategy ?? "—"}
               </dd>
-              {area.inputs_snapshot.strategy === "subbasin_envelope" ? (
+              {(area.inputs_snapshot.strategy === "microcuenca_selection" ||
+                area.inputs_snapshot.strategy === "strahler_catchment_selection") ? (
+                <>
+                  <dt className="text-stone-500">Cuencas</dt>
+                  <dd className="text-stone-900 tabular-nums">
+                    {area.inputs_snapshot.microcuencas_count ?? "—"}
+                  </dd>
+                  <dt className="text-stone-500">Códigos</dt>
+                  <dd className="text-stone-900 font-mono text-xs">
+                    {(area.inputs_snapshot.microcuencas_selected_pfafstetter?.length ?? 0) > 0
+                      ? area.inputs_snapshot.microcuencas_selected_pfafstetter!.join(", ")
+                      : "—"}
+                  </dd>
+                </>
+              ) : area.inputs_snapshot.strategy === "subbasin_envelope" ? (
                 <>
                   <dt className="text-stone-500">Área objetivo</dt>
                   <dd className="text-stone-900 tabular-nums">
@@ -498,12 +564,102 @@ export default function AreaEstudioPanel({
       <div className="mt-5">
         <AreaEstudioActions
           projectId={projectId}
-          hasComponents={hasComponents}
           hasAreaEstudio={hasAreaEstudio}
-          componentCount={componentCount}
-          lastDeriveComponentCount={area?.inputs_snapshot.components_count ?? null}
         />
       </div>
     </section>
+  );
+}
+
+
+// ── Catchment-point callout ───────────────────────────────────────────────────
+
+
+interface CatchmentPointCalloutProps {
+  catchmentPoint: CatchmentPointRow;
+}
+
+function CatchmentPointCallout({ catchmentPoint }: CatchmentPointCalloutProps) {
+  const isUp = catchmentPoint.kind === "upstream";
+  const recvName = catchmentPoint.receiving_river_nombre ?? "(sin nombre)";
+  const confName = catchmentPoint.confluent_river_nombre ?? "(sin nombre)";
+  const fmt = (m: number | null): string => {
+    if (m == null) return "—";
+    return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m.toFixed(0)} m`;
+  };
+  const minD = catchmentPoint.min_distance_m;
+  const minLabel = minD == null ? (isUp ? "2 km" : "5 km") : fmt(minD);
+
+  // Color theme by kind: upstream = sky, downstream = amber.
+  const theme = isUp
+    ? {
+        border: "border-sky-200",
+        bg: "bg-sky-50/60",
+        heading: "text-sky-900",
+        helper: "text-sky-900/80",
+        emphasis: "text-sky-900",
+        dot: "#0ea5e9",
+      }
+    : {
+        border: "border-amber-200",
+        bg: "bg-amber-50/60",
+        heading: "text-amber-900",
+        helper: "text-amber-900/80",
+        emphasis: "text-amber-900",
+        dot: "#d97706",
+      };
+
+  const title = isUp
+    ? "Punto de control aguas arriba"
+    : "Punto de control aguas abajo";
+  const description = isUp
+    ? `Confluencia donde el río receptor del proyecto se une con otro río, al menos ${minLabel} aguas arriba del área efectiva. Anclaje natural para la estación de monitoreo basal (línea base de calidad de agua, antes de cualquier impacto del proyecto).`
+    : `Confluencia donde el río receptor del proyecto se une con otro río, al menos ${minLabel} aguas abajo del área efectiva. Punto natural para la estación de monitoreo post-impacto y el límite hidrográfico del AII.`;
+  const distanceLabel = isUp ? "Aguas arriba del AE" : "Aguas abajo del AE";
+
+  return (
+    <div className={`rounded-md border ${theme.border} ${theme.bg} px-3 py-2.5`}>
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="inline-block h-2.5 w-2.5 rounded-full ring-2 ring-white"
+          style={{ backgroundColor: theme.dot }}
+        />
+        <h4 className={`text-xs font-semibold uppercase tracking-wide ${theme.heading}`}>
+          {title}
+        </h4>
+      </div>
+      <p className={`mt-1 text-xs ${theme.helper}`}>{description}</p>
+      <dl className="mt-2.5 grid grid-cols-[140px_1fr] gap-y-1.5 text-xs text-stone-700">
+        <dt className="text-stone-500">Río receptor</dt>
+        <dd>
+          {recvName}
+          {catchmentPoint.receiving_strahler != null && (
+            <span className="ml-1 text-stone-500">
+              (Strahler {catchmentPoint.receiving_strahler})
+            </span>
+          )}
+        </dd>
+        <dt className="text-stone-500">Confluye con</dt>
+        <dd>
+          {confName}
+          {catchmentPoint.confluent_strahler != null && (
+            <span className="ml-1 text-stone-500">
+              (Strahler {catchmentPoint.confluent_strahler})
+            </span>
+          )}
+        </dd>
+        <dt className="text-stone-500">{distanceLabel}</dt>
+        <dd className={`tabular-nums font-medium ${theme.emphasis}`}>
+          {fmt(catchmentPoint.distance_from_ae_m)}
+        </dd>
+        <dt className="text-stone-500">Ruta total</dt>
+        <dd className="tabular-nums">{fmt(catchmentPoint.path_length_m)}</dd>
+        <dt className="text-stone-500">Calculado</dt>
+        <dd className="text-stone-500">
+          {formatDateTime(catchmentPoint.computed_at)}
+        </dd>
+      </dl>
+    </div>
   );
 }
