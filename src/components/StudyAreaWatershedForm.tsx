@@ -2,7 +2,10 @@
 
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { enqueueRiverCorridorStudyArea } from "@/app/(app)/projects/[id]/actions";
+import {
+  enqueueRiverCorridorStudyArea,
+  type AreaEstudioStrategy,
+} from "@/app/(app)/projects/[id]/actions";
 import type { ExcludableTributaryRow } from "@/lib/types";
 
 interface Props {
@@ -13,6 +16,10 @@ interface Props {
   defaultMinDownstreamM?: number | null;
   /** Initial trunk-buffer (m). Defaults to 150. */
   defaultTrunkBufferM?: number | null;
+  /** Initial corridor width (m). Defaults to 1000. */
+  defaultCorridorWidthM?: number | null;
+  /** Initial strategy. Defaults to "watershed". */
+  defaultStrategy?: AreaEstudioStrategy | null;
   /** Named tributaries inside the current AE that the user can opt to exclude. */
   excludableTributaries: ExcludableTributaryRow[];
   /** IDs currently excluded by the persisted AE row (so the checkboxes
@@ -21,21 +28,29 @@ interface Props {
 }
 
 const DEFAULT_TRUNK_BUFFER_M = 150;
+const DEFAULT_CORRIDOR_WIDTH_M = 1000;
 
 /**
- * Form for recomputing the área de estudio as the between-control-points
- * watershed, minus the user-selected named tributaries.  Catchment-based:
- * respects real watershed divides, with explicit user control over which
- * side tributaries to remove from the AE.
+ * Form for recomputing the área de estudio.  User picks the strategy:
+ *
+ *   - Cuenca con exclusiones (watershed) — between-CPs catchment minus
+ *     user-selected tributaries.  Respects real watershed divides.
+ *   - Corredor del río receptor (corridor) — buffered receiving-river
+ *     path + project anchor.  Tighter and simpler, ignores divides.
  */
 export default function StudyAreaWatershedForm({
   projectId,
   defaultMinUpstreamM,
   defaultMinDownstreamM,
   defaultTrunkBufferM,
+  defaultCorridorWidthM,
+  defaultStrategy,
   excludableTributaries,
   initialExcludedIds,
 }: Props) {
+  const [strategy, setStrategy] = useState<AreaEstudioStrategy>(
+    defaultStrategy ?? "watershed",
+  );
   const [upstream, setUpstream] = useState<number>(
     Math.round(defaultMinUpstreamM ?? 2000),
   );
@@ -44,6 +59,9 @@ export default function StudyAreaWatershedForm({
   );
   const [trunkBuffer, setTrunkBuffer] = useState<number>(
     Math.round(defaultTrunkBufferM ?? DEFAULT_TRUNK_BUFFER_M),
+  );
+  const [corridorWidth, setCorridorWidth] = useState<number>(
+    Math.round(defaultCorridorWidthM ?? DEFAULT_CORRIDOR_WIDTH_M),
   );
   const [excludedIds, setExcludedIds] = useState<Set<number>>(
     () => new Set(initialExcludedIds ?? []),
@@ -71,9 +89,11 @@ export default function StudyAreaWatershedForm({
     setError(null);
     startTransition(async () => {
       const res = await enqueueRiverCorridorStudyArea(projectId, {
+        strategy,
         minUpstreamM: upstream,
         minDownstreamM: downstream,
         trunkBufferM: trunkBuffer,
+        corridorWidthM: corridorWidth,
         excludedTributaryIds: [...excludedIds],
       });
       if (!res.ok) {
@@ -86,6 +106,7 @@ export default function StudyAreaWatershedForm({
   }
 
   const excludedCount = excludedIds.size;
+  const isWatershed = strategy === "watershed";
 
   return (
     <form
@@ -93,16 +114,70 @@ export default function StudyAreaWatershedForm({
       className="rounded-md border border-stone-200 bg-stone-50/50 px-3 py-2.5"
     >
       <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-600">
-        Cuenca entre puntos de control
+        Calcular área de estudio
       </h4>
-      <p className="mt-1 text-xs text-stone-500">
-        Calcula la cuenca de drenaje delimitada por los puntos de control
-        aguas arriba y aguas abajo. Marque los ríos cuya cuenca desea
-        excluir del área de estudio (p. ej. tributarios laterales con su
-        propia cuenca independiente).
-      </p>
 
-      <div className="mt-3 grid grid-cols-3 gap-3">
+      {/* Strategy picker */}
+      <fieldset className="mt-2.5">
+        <legend className="sr-only">Estrategia de cálculo</legend>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <label
+            className={`flex cursor-pointer flex-col gap-1 rounded-md border px-3 py-2 text-xs ${
+              isWatershed
+                ? "border-emerald-500 bg-emerald-50/60 ring-1 ring-emerald-500"
+                : "border-stone-200 bg-white hover:bg-stone-50"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="strategy"
+                value="watershed"
+                checked={isWatershed}
+                onChange={() => setStrategy("watershed")}
+                disabled={pending}
+                className="h-3.5 w-3.5 border-stone-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="font-semibold text-stone-800">
+                Cuenca con exclusiones
+              </span>
+            </span>
+            <span className="text-stone-500">
+              Cuenca de drenaje completa entre los puntos de control. Marque
+              tributarios para sustraer sus cuencas. Respeta divisorias reales.
+            </span>
+          </label>
+          <label
+            className={`flex cursor-pointer flex-col gap-1 rounded-md border px-3 py-2 text-xs ${
+              !isWatershed
+                ? "border-teal-500 bg-teal-50/60 ring-1 ring-teal-500"
+                : "border-stone-200 bg-white hover:bg-stone-50"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="strategy"
+                value="corridor"
+                checked={!isWatershed}
+                onChange={() => setStrategy("corridor")}
+                disabled={pending}
+                className="h-3.5 w-3.5 border-stone-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="font-semibold text-stone-800">
+                Corredor del río receptor
+              </span>
+            </span>
+            <span className="text-stone-500">
+              Buffer a lo largo del río receptor (US → DS) más un anclaje
+              alrededor del proyecto. Más compacto, no sigue divisorias.
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      {/* Common inputs */}
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
         <label className="block text-xs text-stone-600">
           <span className="block">Aguas arriba (m)</span>
           <input
@@ -131,23 +206,44 @@ export default function StudyAreaWatershedForm({
             className="mt-1 w-full rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
           />
         </label>
-        <label className="block text-xs text-stone-600" title="Buffer alrededor del río principal que la sustracción de tributarios no puede cruzar (previene fugas a la cuenca alta del río receptor cuando las geometrías coinciden en la confluencia).">
-          <span className="block">Buffer río principal (m)</span>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={30}
-            max={500}
-            step={30}
-            value={trunkBuffer}
-            onChange={(e) => setTrunkBuffer(Number(e.target.value) || 0)}
-            disabled={pending}
-            className="mt-1 w-full rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50"
-          />
-        </label>
+        {isWatershed ? (
+          <label
+            className="block text-xs text-stone-600"
+            title="Buffer alrededor del río principal que la sustracción de tributarios no puede cruzar (previene fugas a la cuenca alta del río receptor)."
+          >
+            <span className="block">Buffer río principal (m)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={30}
+              max={500}
+              step={30}
+              value={trunkBuffer}
+              onChange={(e) => setTrunkBuffer(Number(e.target.value) || 0)}
+              disabled={pending}
+              className="mt-1 w-full rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50"
+            />
+          </label>
+        ) : (
+          <label className="block text-xs text-stone-600">
+            <span className="block">Ancho corredor (m)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={200}
+              max={5000}
+              step={100}
+              value={corridorWidth}
+              onChange={(e) => setCorridorWidth(Number(e.target.value) || 0)}
+              disabled={pending}
+              className="mt-1 w-full rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm tabular-nums focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:opacity-50"
+            />
+          </label>
+        )}
       </div>
 
-      {sortedTributaries.length > 0 && (
+      {/* Tributary exclusions (watershed strategy only) */}
+      {isWatershed && sortedTributaries.length > 0 && (
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-stone-600">
@@ -188,9 +284,11 @@ export default function StudyAreaWatershedForm({
                       disabled={pending}
                       className="h-3.5 w-3.5 rounded border-stone-300 text-rose-600 focus:ring-rose-500"
                     />
-                    <span className={`min-w-0 flex-1 truncate font-medium ${
-                      checked ? "text-rose-900 line-through" : "text-stone-800"
-                    }`}>
+                    <span
+                      className={`min-w-0 flex-1 truncate font-medium ${
+                        checked ? "text-rose-900 line-through" : "text-stone-800"
+                      }`}
+                    >
                       {t.nombre}
                     </span>
                     <span className="text-stone-400 tabular-nums">
@@ -215,9 +313,11 @@ export default function StudyAreaWatershedForm({
         >
           {pending
             ? "Encolando…"
-            : excludedCount > 0
-              ? `Recalcular cuenca (excluir ${excludedCount})`
-              : "Recalcular cuenca"}
+            : isWatershed
+              ? excludedCount > 0
+                ? `Recalcular cuenca (excluir ${excludedCount})`
+                : "Recalcular cuenca"
+              : "Recalcular corredor"}
         </button>
         {submittedJobId && (
           <span className="text-xs text-stone-500">

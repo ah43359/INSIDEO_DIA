@@ -200,6 +200,14 @@ export default function AreaEstudioPanel({
           defaultMinUpstreamM={upstreamCp?.min_distance_m ?? null}
           defaultMinDownstreamM={downstreamCp?.min_distance_m ?? null}
           defaultTrunkBufferM={area?.inputs_snapshot.trunk_buffer_m ?? null}
+          defaultCorridorWidthM={area?.inputs_snapshot.corridor_width_m ?? null}
+          defaultStrategy={
+            area?.inputs_snapshot.strategy === "corridor"
+              ? "corridor"
+              : area?.inputs_snapshot.strategy === "watershed_with_exclusions"
+                ? "watershed"
+                : null
+          }
           excludableTributaries={excludableTributaries}
           initialExcludedIds={area?.inputs_snapshot.excluded_tributary_ids ?? []}
         />
@@ -233,11 +241,15 @@ export default function AreaEstudioPanel({
               ) : null}
               <dt className="text-stone-500">Estrategia</dt>
               <dd className="text-stone-900 font-mono text-xs">
-                {area.inputs_snapshot.strategy === "river_corridor"
-                  ? "Corredor del río receptor"
-                  : area.inputs_snapshot.strategy === "between_control_points"
-                    ? "Cuenca entre puntos de control (legacy)"
-                    : area.inputs_snapshot.strategy ?? "—"}
+                {area.inputs_snapshot.strategy === "watershed_with_exclusions"
+                  ? "Cuenca con exclusiones"
+                  : area.inputs_snapshot.strategy === "corridor"
+                    ? "Corredor del río receptor"
+                    : area.inputs_snapshot.strategy === "river_corridor"
+                      ? "Corredor del río receptor (legacy)"
+                      : area.inputs_snapshot.strategy === "between_control_points"
+                        ? "Cuenca entre puntos de control (legacy)"
+                        : area.inputs_snapshot.strategy ?? "—"}
               </dd>
               <dt className="text-stone-500">Componentes</dt>
               <dd className="text-stone-900 tabular-nums">
@@ -263,13 +275,19 @@ export default function AreaEstudioPanel({
             <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">
               <dt className="text-stone-500">Estrategia</dt>
               <dd className="text-stone-900 font-mono text-xs">
-                {area.inputs_snapshot.strategy === "river_corridor"
-                  ? "Corredor del río receptor"
-                  : area.inputs_snapshot.strategy === "between_control_points"
-                    ? "Cuenca entre puntos de control (legacy)"
-                    : area.inputs_snapshot.strategy ?? "—"}
+                {area.inputs_snapshot.strategy === "watershed_with_exclusions"
+                  ? "Cuenca con exclusiones"
+                  : area.inputs_snapshot.strategy === "corridor"
+                    ? "Corredor del río receptor"
+                    : area.inputs_snapshot.strategy === "river_corridor"
+                      ? "Corredor del río receptor (legacy)"
+                      : area.inputs_snapshot.strategy === "between_control_points"
+                        ? "Cuenca entre puntos de control (legacy)"
+                        : area.inputs_snapshot.strategy ?? "—"}
               </dd>
-              {area.inputs_snapshot.strategy === "river_corridor" ? (
+              {(area.inputs_snapshot.strategy === "watershed_with_exclusions"
+                || area.inputs_snapshot.strategy === "corridor"
+                || area.inputs_snapshot.strategy === "river_corridor") ? (
                 <>
                   <dt className="text-stone-500">Río receptor</dt>
                   <dd className="text-stone-900">

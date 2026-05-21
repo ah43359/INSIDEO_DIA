@@ -29,29 +29,41 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 // compatibility — the underlying algorithm changed but the queue plumbing
 // didn't.
 
-export interface WatershedExclusionsOptions {
+export type AreaEstudioStrategy = "watershed" | "corridor";
+
+export interface AreaEstudioComputeOptions {
+  /** Which algorithm to run. */
+  strategy: AreaEstudioStrategy;
   /** Minimum metres past the AE polygon for the downstream control point. */
   minDownstreamM?: number;
   /** Minimum metres past the AE polygon for the upstream control point. */
   minUpstreamM?: number;
-  /** ref_rivers.id of named tributaries to subtract from the watershed. */
+  /** (watershed) ref_rivers.id of named tributaries to subtract. */
   excludedTributaryIds?: number[];
-  /** Buffer (m) around the receiving river that the tributary flood-fill
-   *  is forbidden to enter — prevents the flood from spilling into the
-   *  main stem when geometries are coincident at the confluence. */
+  /** (watershed) Buffer (m) around the receiving river that the tributary
+   *  flood-fill is forbidden to enter. */
   trunkBufferM?: number;
+  /** (corridor) Buffer half-width (m) on each side of the receiving-river path. */
+  corridorWidthM?: number;
+  /** (corridor) Buffer (m) around project components used as the AE anchor. */
+  projectBufferM?: number;
 }
 
 export async function enqueueRiverCorridorStudyArea(
   projectId: string,
-  options: WatershedExclusionsOptions = {},
+  options: AreaEstudioComputeOptions,
 ): Promise<ActionResult> {
-  const payload: Record<string, unknown> = {};
+  const payload: Record<string, unknown> = { strategy: options.strategy };
   if (options.minDownstreamM != null) payload.min_downstream_m = options.minDownstreamM;
   if (options.minUpstreamM   != null) payload.min_upstream_m   = options.minUpstreamM;
-  if (options.trunkBufferM   != null) payload.trunk_buffer_m   = options.trunkBufferM;
-  if (options.excludedTributaryIds && options.excludedTributaryIds.length > 0) {
-    payload.excluded_tributary_ids = options.excludedTributaryIds;
+  if (options.strategy === "watershed") {
+    if (options.trunkBufferM != null) payload.trunk_buffer_m = options.trunkBufferM;
+    if (options.excludedTributaryIds && options.excludedTributaryIds.length > 0) {
+      payload.excluded_tributary_ids = options.excludedTributaryIds;
+    }
+  } else {
+    if (options.corridorWidthM != null) payload.corridor_width_m = options.corridorWidthM;
+    if (options.projectBufferM != null) payload.project_buffer_m = options.projectBufferM;
   }
 
   const supabase = await createClient();
