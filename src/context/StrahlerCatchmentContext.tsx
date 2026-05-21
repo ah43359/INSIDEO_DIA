@@ -1,6 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+// Vestigial no-op context kept for compatibility with ProjectMap.tsx after the
+// Strahler-catchment selection UI was removed. See AreaEstudioSelectionContext
+// for the same pattern.
+
+import { createContext, useContext } from "react";
 
 interface StrahlerSelectionCtx {
   selectedIds: ReadonlySet<number>;
@@ -16,33 +20,4 @@ const StrahlerSelectionContext = createContext<StrahlerSelectionCtx>({
 
 export function useStrahlerCatchmentSelection(): StrahlerSelectionCtx {
   return useContext(StrahlerSelectionContext);
-}
-
-export function StrahlerCatchmentProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(
-    new Set(),
-  );
-
-  const toggle = useCallback((id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-
-  return (
-    <StrahlerSelectionContext.Provider
-      value={{ selectedIds, toggle, clearSelection }}
-    >
-      {children}
-    </StrahlerSelectionContext.Provider>
-  );
 }

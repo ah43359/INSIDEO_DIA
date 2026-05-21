@@ -2105,33 +2105,6 @@ export default function ProjectMap({
                 onToggle: () => toggleGroup("efectiva"),
               }
             : null,
-          hasArea
-            ? {
-                label: "Sub-cuencas calculadas (D8)",
-                swatch: "dashedLine" as const,
-                color: "#059669",
-                visible: groupVisible.subbasins,
-                onToggle: () => toggleGroup("subbasins"),
-              }
-            : null,
-          hasDistrictMicrocuencas
-            ? {
-                label: `Microcuencas del distrito${selectedIds.size > 0 ? ` (${selectedIds.size} sel.)` : ""}`,
-                swatch: "area" as const,
-                color: "#0284c7",
-                visible: groupVisible.districtMicrocuencas,
-                onToggle: () => toggleGroup("districtMicrocuencas"),
-              }
-            : null,
-          hasStrahlerCatchments
-            ? {
-                label: `Cuencas Strahler ≥ 2${strahlerSelectedIds.size > 0 ? ` (${strahlerSelectedIds.size} sel.)` : ""}`,
-                swatch: "area" as const,
-                color: "#0d9488",
-                visible: groupVisible.strahlerCatchments,
-                onToggle: () => toggleGroup("strahlerCatchments"),
-              }
-            : null,
           hasCatchmentPoint
             ? {
                 label: "Puntos de control (aguas arriba / abajo)",

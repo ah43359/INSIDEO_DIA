@@ -139,12 +139,16 @@ export interface AreaEstudioInputsSnapshot {
   microcuencas_selected_ids?: number[];
   microcuencas_selected_pfafstetter?: string[];
   microcuencas_count?: number;
-  // between_control_points fields
+  // between_control_points fields (legacy) + river_corridor fields
   upstream_min_distance_m?: number;
   downstream_min_distance_m?: number;
   upstream_catchment_point?: { x: number; y: number; receiving_river_nombre?: string | null; confluent_river_nombre?: string | null } | null;
   downstream_catchment_point?: { x: number; y: number; receiving_river_nombre?: string | null; confluent_river_nombre?: string | null } | null;
   method?: string;
+  // river_corridor strategy fields
+  receiving_river_nombre?: string | null;
+  corridor_width_m?: number;
+  excluded_tributary_ids?: string[];
 }
 
 export type CatchmentPointKind = "upstream" | "downstream";

@@ -21,67 +21,33 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-// ─── Save area de estudio from selected microcuencas ─────────────────────
+// ─── Enqueue: river-corridor study area along the receiving river ───────
 
-export async function saveAreaEstudioFromMicrocuencas(
-  projectId: string,
-  microcuencaIds: number[],
-): Promise<ActionResult> {
-  if (microcuencaIds.length === 0) {
-    return { ok: false, message: "Seleccione al menos una microcuenca." };
-  }
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("save_area_estudio_from_microcuencas", {
-    p_project_id: projectId,
-    p_microcuenca_ids: microcuencaIds,
-  });
-  if (error) return { ok: false, message: error.message };
-  return { ok: true };
-}
-
-// ─── Save area de estudio from Strahler-filtered catchments ──────────────
-
-export async function saveAreaEstudioFromStrahlerCatchments(
-  projectId: string,
-  catchmentIds: number[],
-): Promise<ActionResult> {
-  if (catchmentIds.length === 0) {
-    return { ok: false, message: "Seleccione al menos una cuenca." };
-  }
-  const supabase = await createClient();
-  const { error } = await supabase.rpc(
-    "save_area_estudio_from_strahler_catchments",
-    { p_project_id: projectId, p_microcuenca_ids: catchmentIds },
-  );
-  if (error) return { ok: false, message: error.message };
-  return { ok: true };
-}
-
-// ─── Enqueue: study area watershed between upstream + downstream CPs ────
-
-export interface BetweenCpsOptions {
+export interface RiverCorridorOptions {
   /** Minimum metres past the AE polygon for the downstream control point. */
   minDownstreamM?: number;
   /** Minimum metres past the AE polygon for the upstream control point. */
   minUpstreamM?: number;
-  /** D8 cell must be within this distance of a junction node to qualify. */
-  junctionProxM?: number;
-  /** Minimum number of distinct rivers meeting at a node to qualify. */
-  minJunctionArity?: number;
+  /** Buffer width (m) on each side of the receiving-river path. */
+  corridorWidthM?: number;
+  /** Future use: subtract these named-tributary catchments before persisting. */
+  excludedTributaryIds?: string[];
 }
 
-export async function enqueueBetweenCpsStudyArea(
+export async function enqueueRiverCorridorStudyArea(
   projectId: string,
-  options: BetweenCpsOptions = {},
+  options: RiverCorridorOptions = {},
 ): Promise<ActionResult> {
   const payload: Record<string, unknown> = {};
   if (options.minDownstreamM != null) payload.min_downstream_m = options.minDownstreamM;
   if (options.minUpstreamM   != null) payload.min_upstream_m   = options.minUpstreamM;
-  if (options.junctionProxM  != null) payload.junction_prox_m  = options.junctionProxM;
-  if (options.minJunctionArity != null) payload.min_junction_arity = options.minJunctionArity;
+  if (options.corridorWidthM != null) payload.corridor_width_m = options.corridorWidthM;
+  if (options.excludedTributaryIds && options.excludedTributaryIds.length > 0) {
+    payload.excluded_tributary_ids = options.excludedTributaryIds;
+  }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("enqueue_between_cps_study_area", {
+  const { data, error } = await supabase.rpc("enqueue_river_corridor_study_area", {
     p_project_id: projectId,
     p_payload: payload,
   });

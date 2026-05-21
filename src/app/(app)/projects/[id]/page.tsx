@@ -9,16 +9,12 @@ import {
   type ComponenteInventario,
   type ConcesionRow,
   type CatchmentPointRow,
-  type MicrocuencaRow,
-  type StrahlerCatchmentRow,
   type Project,
   type RfiSubmission,
   type RiverRow,
   type SamplingStationRow,
 } from "@/lib/types";
 import AreaEstudioPanel from "@/components/AreaEstudioPanel";
-import { AreaEstudioSelectionProvider } from "@/context/AreaEstudioSelectionContext";
-import { StrahlerCatchmentProvider } from "@/context/StrahlerCatchmentContext";
 import CampoPanel from "@/components/CampoPanel";
 import PresupuestoPanel from "@/components/PresupuestoPanel";
 import ProjectMap from "@/components/ProjectMap";
@@ -69,7 +65,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: inventario },
     { data: submissions },
     { data: featuresJson, error: featuresError },
-    { data: microcuencasRows, error: microcuencasError },
     { data: areaRows, error: areaError },
     { data: riversRows, error: riversError },
     { data: receptoresRows, error: receptoresError },
@@ -85,8 +80,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: comunidadesRows, error: comunidadesError },
     { data: viasRows, error: viasError },
     { data: socialBaselineRows },
-    { data: districtMicrocuencasRows },
-    { data: strahlerCatchmentsRows },
     { data: catchmentPointRows },
   ] = await Promise.all([
     supabase
@@ -111,7 +104,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       .eq("project_id", id)
       .order("submitted_at", { ascending: false }),
     supabase.rpc("project_features", { p_id: id }),
-    supabase.rpc("get_microcuencas_for_project", { p_project_id: id }),
     supabase.rpc("get_area_estudio_for_project", { p_project_id: id }),
     supabase.rpc("get_streams_for_district", { p_project_id: id }),
     supabase.rpc("get_centros_poblados_for_project", { p_project_id: id, p_buffer_m: 5000 }),
@@ -129,8 +121,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_comunidades_for_project", { p_project_id: id }),
     supabase.rpc("get_vias_for_project", { p_project_id: id }),
     supabase.rpc("get_social_baseline_for_project", { p_project_id: id }),
-    supabase.rpc("get_microcuencas_for_district", { p_project_id: id }),
-    supabase.rpc("get_strahler_catchments_for_project", { p_project_id: id }),
     supabase.rpc("get_catchment_points_for_project", { p_project_id: id }),
   ]);
 
@@ -150,43 +140,8 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   // The RPC orders approved first, then most recent draft. The first
   // row is the one to render; remaining rows are older drafts kept for
   // history (not shown in v1).
-  const microcuencas = (microcuencasRows ?? []) as MicrocuencaRow[];
   const areaRowsAll = (areaRows ?? []) as AreaEstudioRow[];
   const area = areaRowsAll[0] ?? null;
-
-  const districtMicrocuencas = (districtMicrocuencasRows ?? []) as MicrocuencaRow[];
-  const districtMicrocuencasFc: GeoJSON.FeatureCollection = {
-    type: "FeatureCollection",
-    features: districtMicrocuencas.map((m) => ({
-      type: "Feature",
-      id: m.id,
-      geometry: JSON.parse(m.geom_geojson) as GeoJSON.Geometry,
-      properties: {
-        id: m.id,
-        pfafstetter: m.pfafstetter,
-        nombre: m.nombre,
-        nivel: m.nivel,
-        area_km2: m.area_km2,
-      },
-    })),
-  };
-
-  const strahlerCatchments = (strahlerCatchmentsRows ?? []) as StrahlerCatchmentRow[];
-  const strahlerCatchmentsFc: GeoJSON.FeatureCollection = {
-    type: "FeatureCollection",
-    features: strahlerCatchments.map((c) => ({
-      type: "Feature",
-      id: c.id,
-      geometry: JSON.parse(c.geom_geojson) as GeoJSON.Geometry,
-      properties: {
-        id: c.id,
-        pfafstetter: c.pfafstetter,
-        nombre: c.nombre,
-        nivel: c.nivel,
-        area_km2: c.area_km2,
-      },
-    })),
-  };
 
   // `get_catchment_points_for_project` returns 0-2 rows: one per kind.
   const catchmentPointRowsList = (catchmentPointRows ?? []) as CatchmentPointRow[];
@@ -568,8 +523,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       </div>
 
       {/* ── TAB CONTENT ──────────────────────────────────────────────── */}
-      <AreaEstudioSelectionProvider>
-      <StrahlerCatchmentProvider>
       <div className="px-8 py-6">
         {activeTab === "campo" ? (
           <CampoPanel projectId={id} projectName={p.nombre_proyecto} />
@@ -581,10 +534,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             id={id}
             geojson={geojson}
             featuresError={featuresError}
-            districtMicrocuencasFc={districtMicrocuencasFc}
-            districtMicrocuencas={districtMicrocuencas}
-            strahlerCatchmentsFc={strahlerCatchmentsFc}
-            strahlerCatchments={strahlerCatchments}
             upstreamCp={upstreamCp}
             downstreamCp={downstreamCp}
             catchmentPointFc={catchmentPointFc}
@@ -604,7 +553,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             distritosFc={distritosFc}
             comunidadesFc={comunidadesFc}
             viasFc={viasFc}
-            microcuencasError={microcuencasError}
             areaError={areaError}
             areaEfectivaError={areaEfectivaError}
             riversError={riversError}
@@ -619,7 +567,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             distritosError={distritosError}
             comunidadesError={comunidadesError}
             viasError={viasError}
-            microcuencas={microcuencas}
             receptores={receptores}
             stations={stations}
             vegetation={vegetation}
@@ -644,8 +591,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           <EmptyTab tab={activeTab} />
         )}
       </div>
-      </StrahlerCatchmentProvider>
-      </AreaEstudioSelectionProvider>
     </div>
   );
 }
@@ -665,10 +610,6 @@ function ResumenTab({
   id,
   geojson,
   featuresError,
-  districtMicrocuencasFc,
-  districtMicrocuencas,
-  strahlerCatchmentsFc,
-  strahlerCatchments,
   upstreamCp,
   downstreamCp,
   catchmentPointFc,
@@ -688,7 +629,6 @@ function ResumenTab({
   distritosFc,
   comunidadesFc,
   viasFc,
-  microcuencasError,
   areaError,
   areaEfectivaError,
   riversError,
@@ -703,7 +643,6 @@ function ResumenTab({
   distritosError,
   comunidadesError,
   viasError,
-  microcuencas,
   receptores,
   stations,
   vegetation,
@@ -716,13 +655,9 @@ function ResumenTab({
   id: string;
   geojson: GeoJSON.FeatureCollection;
   featuresError: { message: string } | null;
-  districtMicrocuencasFc: GeoJSON.FeatureCollection;
-  strahlerCatchmentsFc: GeoJSON.FeatureCollection;
-  strahlerCatchments: StrahlerCatchmentRow[];
   upstreamCp: CatchmentPointRow | null;
   downstreamCp: CatchmentPointRow | null;
   catchmentPointFc: GeoJSON.FeatureCollection;
-  districtMicrocuencas: MicrocuencaRow[];
   riversFc: GeoJSON.FeatureCollection;
   receptoresFc: GeoJSON.FeatureCollection;
   stationsFc: GeoJSON.FeatureCollection;
@@ -739,7 +674,6 @@ function ResumenTab({
   distritosFc: GeoJSON.FeatureCollection;
   comunidadesFc: GeoJSON.FeatureCollection;
   viasFc: GeoJSON.FeatureCollection;
-  microcuencasError: { message: string } | null;
   areaError: { message: string } | null;
   areaEfectivaError: { message: string } | null;
   riversError: { message: string } | null;
@@ -754,7 +688,6 @@ function ResumenTab({
   distritosError: { message: string } | null;
   comunidadesError: { message: string } | null;
   viasError: { message: string } | null;
-  microcuencas: MicrocuencaRow[];
   receptores: CentroPobladoRow[];
   stations: SamplingStationRow[];
   vegetation: VegetationZone[];
@@ -764,7 +697,6 @@ function ResumenTab({
   resumenV2: boolean;
 }) {
   const layerError =
-    microcuencasError?.message ??
     areaError?.message ??
     areaEfectivaError?.message ??
     riversError?.message ??
@@ -819,7 +751,6 @@ function ResumenTab({
             projectId={id}
             geojson={geojson}
             featuresError={featuresError}
-            strahlerCatchmentsFc={strahlerCatchmentsFc}
             catchmentPointFc={catchmentPointFc}
             riversFc={riversFc}
             receptoresFc={receptoresFc}
@@ -853,8 +784,6 @@ function ResumenTab({
             <div className="h-[480px] overflow-hidden rounded-lg">
               <ProjectMap
                 geojson={geojson}
-                districtMicrocuencas={districtMicrocuencasFc}
-                strahlerCatchments={strahlerCatchmentsFc}
                 catchmentPoint={catchmentPointFc}
                 rivers={riversFc}
                 receptores={receptoresFc}
@@ -883,9 +812,6 @@ function ResumenTab({
       {/* Área de estudio panel */}
       <AreaEstudioPanel
         area={area}
-        microcuencas={microcuencas}
-        districtMicrocuencas={districtMicrocuencas}
-        strahlerCatchments={strahlerCatchments}
         upstreamCp={upstreamCp}
         downstreamCp={downstreamCp}
         projectId={id}
@@ -1128,7 +1054,6 @@ function MapWithLeyenda({
   projectId,
   geojson,
   featuresError,
-  strahlerCatchmentsFc,
   catchmentPointFc,
   riversFc,
   receptoresFc,
@@ -1152,7 +1077,6 @@ function MapWithLeyenda({
   projectId: string;
   geojson: GeoJSON.FeatureCollection;
   featuresError: { message: string } | null;
-  strahlerCatchmentsFc: GeoJSON.FeatureCollection;
   catchmentPointFc: GeoJSON.FeatureCollection;
   riversFc: GeoJSON.FeatureCollection;
   receptoresFc: GeoJSON.FeatureCollection;
@@ -1211,7 +1135,6 @@ function MapWithLeyenda({
               projectId={projectId}
               areaEfectivaRow={areaEfectiva}
               geojson={geojson}
-              strahlerCatchments={strahlerCatchmentsFc}
               catchmentPoint={catchmentPointFc}
               rivers={riversFc}
               receptores={receptoresFc}

@@ -2,25 +2,15 @@ import type {
   AreaEstudioRow,
   CatchmentPointRow,
   CentroPobladoRow,
-  MicrocuencaRow,
   SamplingStationRow,
-  StrahlerCatchmentRow,
 } from "@/lib/types";
 import AreaEstudioActions from "@/components/AreaEstudioActions";
-import MicrocuencaSelectionList from "@/components/MicrocuencaSelectionList";
-import StrahlerCatchmentList from "@/components/StrahlerCatchmentList";
 import StudyAreaWatershedForm from "@/components/StudyAreaWatershedForm";
 import { formatDateTime, formatHa, formatInt } from "@/lib/format";
 
 interface AreaEstudioPanelProps {
   /** Latest área de estudio row (approved if any, else most recent draft). */
   area: AreaEstudioRow | null;
-  /** Microcuencas that intersect the project (independent of any draft). */
-  microcuencas: MicrocuencaRow[];
-  /** All microcuencas within the project's district(s), for the selection workflow. */
-  districtMicrocuencas: MicrocuencaRow[];
-  /** Strahler-2+ catchment polygons for the study area selection workflow. */
-  strahlerCatchments: StrahlerCatchmentRow[];
   /** Upstream confluence anchor (baseline monitoring) — null if not computed / not found. */
   upstreamCp: CatchmentPointRow | null;
   /** Downstream confluence anchor (post-impact monitoring) — null if not computed. */
@@ -141,9 +131,6 @@ function groupStations(stations: SamplingStationRow[]): PanelStationGroup[] {
 
 export default function AreaEstudioPanel({
   area,
-  microcuencas,
-  districtMicrocuencas,
-  strahlerCatchments,
   upstreamCp,
   downstreamCp,
   receptores,
@@ -196,10 +183,6 @@ export default function AreaEstudioPanel({
       </p>
 
       <div className="mb-4 space-y-4">
-        <StrahlerCatchmentList
-          catchments={strahlerCatchments}
-          projectId={projectId}
-        />
         {(upstreamCp || downstreamCp) && (
           <div className="space-y-2">
             {upstreamCp && <CatchmentPointCallout catchmentPoint={upstreamCp} />}
@@ -211,17 +194,6 @@ export default function AreaEstudioPanel({
           defaultMinUpstreamM={upstreamCp?.min_distance_m ?? null}
           defaultMinDownstreamM={downstreamCp?.min_distance_m ?? null}
         />
-        <details className="rounded-md border border-stone-200">
-          <summary className="cursor-pointer select-none px-3 py-2 text-xs text-stone-500 hover:bg-stone-50">
-            Selección alternativa — Microcuencas del distrito (Pfafstetter)
-          </summary>
-          <div className="px-3 pb-3 pt-2">
-            <MicrocuencaSelectionList
-              districtMicrocuencas={districtMicrocuencas}
-              projectId={projectId}
-            />
-          </div>
-        </details>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -252,13 +224,11 @@ export default function AreaEstudioPanel({
               ) : null}
               <dt className="text-stone-500">Estrategia</dt>
               <dd className="text-stone-900 font-mono text-xs">
-                {area.inputs_snapshot.strategy === "between_control_points"
-                  ? "Cuenca entre puntos de control"
-                  : area.inputs_snapshot.strategy === "strahler_catchment_selection"
-                    ? "Cuencas Strahler ≥ 2"
-                    : area.inputs_snapshot.strategy === "microcuenca_selection"
-                      ? "Selección de microcuencas"
-                      : area.inputs_snapshot.strategy ?? "—"}
+                {area.inputs_snapshot.strategy === "river_corridor"
+                  ? "Corredor del río receptor"
+                  : area.inputs_snapshot.strategy === "between_control_points"
+                    ? "Cuenca entre puntos de control (legacy)"
+                    : area.inputs_snapshot.strategy ?? "—"}
               </dd>
               <dt className="text-stone-500">Componentes</dt>
               <dd className="text-stone-900 tabular-nums">
@@ -284,76 +254,51 @@ export default function AreaEstudioPanel({
             <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">
               <dt className="text-stone-500">Estrategia</dt>
               <dd className="text-stone-900 font-mono text-xs">
-                {area.inputs_snapshot.strategy === "strahler_catchment_selection"
-                  ? "Cuencas Strahler ≥ 2"
-                  : area.inputs_snapshot.strategy === "microcuenca_selection"
-                    ? "Selección de microcuencas"
-                    : area.inputs_snapshot.strategy === "subbasin_envelope"
-                      ? "Sub-cuencas (ridgelines)"
-                      : area.inputs_snapshot.strategy === "buffer_drainage"
-                        ? "Buffer + drenaje (legacy)"
-                        : area.inputs_snapshot.strategy ?? "—"}
+                {area.inputs_snapshot.strategy === "river_corridor"
+                  ? "Corredor del río receptor"
+                  : area.inputs_snapshot.strategy === "between_control_points"
+                    ? "Cuenca entre puntos de control (legacy)"
+                    : area.inputs_snapshot.strategy ?? "—"}
               </dd>
-              {(area.inputs_snapshot.strategy === "microcuenca_selection" ||
-                area.inputs_snapshot.strategy === "strahler_catchment_selection") ? (
+              {area.inputs_snapshot.strategy === "river_corridor" ? (
                 <>
-                  <dt className="text-stone-500">Cuencas</dt>
-                  <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.microcuencas_count ?? "—"}
+                  <dt className="text-stone-500">Río receptor</dt>
+                  <dd className="text-stone-900">
+                    {area.inputs_snapshot.receiving_river_nombre ?? "—"}
                   </dd>
-                  <dt className="text-stone-500">Códigos</dt>
-                  <dd className="text-stone-900 font-mono text-xs">
-                    {(area.inputs_snapshot.microcuencas_selected_pfafstetter?.length ?? 0) > 0
-                      ? area.inputs_snapshot.microcuencas_selected_pfafstetter!.join(", ")
+                  <dt className="text-stone-500">Ancho corredor</dt>
+                  <dd className="text-stone-900 tabular-nums">
+                    {area.inputs_snapshot.corridor_width_m != null
+                      ? `${formatInt(area.inputs_snapshot.corridor_width_m)} m`
                       : "—"}
                   </dd>
-                </>
-              ) : area.inputs_snapshot.strategy === "subbasin_envelope" ? (
-                <>
-                  <dt className="text-stone-500">Área objetivo</dt>
+                  <dt className="text-stone-500">Aguas arriba</dt>
                   <dd className="text-stone-900 tabular-nums">
-                    {formatInt(area.inputs_snapshot.target_area_ha)} ha
+                    {area.inputs_snapshot.upstream_min_distance_m != null
+                      ? `${formatInt(area.inputs_snapshot.upstream_min_distance_m)} m`
+                      : "—"}
                   </dd>
-                  <dt className="text-stone-500">Umbral de río</dt>
+                  <dt className="text-stone-500">Aguas abajo</dt>
                   <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.stream_threshold_cells ?? "—"} celdas
+                    {area.inputs_snapshot.downstream_min_distance_m != null
+                      ? `${formatInt(area.inputs_snapshot.downstream_min_distance_m)} m`
+                      : "—"}
                   </dd>
-                  <dt className="text-stone-500">Saltos vecinos máx</dt>
-                  <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.max_hops ?? "—"}
-                  </dd>
-                  <dt className="text-stone-500">Sub-cuencas usadas</dt>
-                  <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.n_subbasins_used ?? "—"}
-                  </dd>
-                  <dt className="text-stone-500">Saltos usados</dt>
-                  <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.hops_used ?? "—"}
-                  </dd>
+                  {(area.inputs_snapshot.excluded_tributary_ids?.length ?? 0) > 0 && (
+                    <>
+                      <dt className="text-stone-500">Excluidos</dt>
+                      <dd className="text-stone-900 font-mono text-xs">
+                        {area.inputs_snapshot.excluded_tributary_ids!.join(", ")}
+                      </dd>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
-                  <dt className="text-stone-500">Buffer receptor</dt>
-                  <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.receptor_buffer_m != null
-                      ? `${area.inputs_snapshot.receptor_buffer_m} m`
-                      : "—"}
-                  </dd>
-                  <dt className="text-stone-500">Drenaje</dt>
-                  <dd className="text-stone-900 font-mono text-xs">
-                    {area.inputs_snapshot.drainage_provider ?? "—"}
-                  </dd>
-                  <dt className="text-stone-500">Microcuencas máx</dt>
-                  <dd className="text-stone-900 tabular-nums">
-                    {area.inputs_snapshot.max_microcuenca_area_km2 != null
-                      ? `${area.inputs_snapshot.max_microcuenca_area_km2} km²`
-                      : "—"}
-                  </dd>
-                  <dt className="text-stone-500">UH usadas</dt>
-                  <dd className="text-stone-900 font-mono text-xs">
-                    {(area.inputs_snapshot.microcuencas_used_pfafstetter?.length ?? 0) > 0
-                      ? area.inputs_snapshot.microcuencas_used_pfafstetter!.join(", ")
-                      : "—"}
+                  <dt className="text-stone-500">Estrategia legacy</dt>
+                  <dd className="text-stone-500 text-xs italic">
+                    Detalles no mostrados — regenerar con la estrategia
+                    &ldquo;corredor del río receptor&rdquo;.
                   </dd>
                 </>
               )}
@@ -364,38 +309,6 @@ export default function AreaEstudioPanel({
             </dl>
           ) : (
             <p className="text-sm text-stone-500">Sin derivación ejecutada.</p>
-          )}
-        </div>
-
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            Microcuencas intersectadas ({microcuencas.length})
-          </h3>
-          {microcuencas.length === 0 ? (
-            <p className="text-sm text-stone-500">
-              Ninguna microcuenca de <code>ref_microcuencas</code> intersecta los
-              componentes. Verificar que la capa ANA Pfafstetter esté ingestada.
-            </p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {microcuencas.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex items-baseline justify-between rounded border border-stone-200 px-2 py-1"
-                >
-                  <span className="font-mono text-xs">{m.pfafstetter}</span>
-                  <span className="ml-2 flex-1 truncate text-stone-700">
-                    {m.nombre ?? <span className="text-stone-400">sin nombre</span>}
-                  </span>
-                  <span className="ml-2 text-xs text-stone-500 tabular-nums">
-                    N{m.nivel}
-                    {m.area_km2 != null
-                      ? ` · ${m.area_km2.toFixed(1)} km²`
-                      : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
           )}
         </div>
 
