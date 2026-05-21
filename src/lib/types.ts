@@ -214,7 +214,8 @@ export type SamplingKind =
   | "agua_superficial"
   | "agua_subterranea"
   | "suelos"
-  | "sedimentos";
+  | "sedimentos"
+  | "hidrobiologicos";
 
 export interface SamplingStationRow {
   id: string;
@@ -301,6 +302,7 @@ export const KIND_LABEL: Record<string, string> = {
   suelos: "Suelos",
   sedimentos: "Sedimentos",
   flora_fauna: "Flora y Fauna",
+  hidrobiologicos: "Monitoreo Hidrobiológico",
 };
 
 // Parameters by station kind (from ECA Peru standards)
@@ -369,6 +371,14 @@ export const PARAMETERS_BY_KIND: Record<string, { param: string; unit: string }[
     { param: "Cu", unit: "mg/kg" },
     { param: "Zn", unit: "mg/kg" },
   ],
+  hidrobiologicos: [
+    { param: "peces", unit: "ind." },
+    { param: "plancton_20um", unit: "org/L" },
+    { param: "plancton_60um", unit: "org/L" },
+    { param: "macroinvertebrados_benticos", unit: "ind/m²" },
+    { param: "perifiton_clorofila_a", unit: "mg/m²" },
+    { param: "BMWP_Col", unit: "índice" },
+  ],
 };
 
 export const STATION_COLORS: Record<string, string> = {
@@ -379,6 +389,7 @@ export const STATION_COLORS: Record<string, string> = {
   agua_subterranea: "#0284c7",
   suelos: "#a16207",
   sedimentos: "#854d0e",
+  hidrobiologicos: "#16a34a",
   default: "#1f2937",
 };
 
