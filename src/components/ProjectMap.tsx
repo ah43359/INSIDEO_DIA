@@ -111,6 +111,12 @@ const LAYER_GROUPS = {
   concesiones:  ["concesiones-fill", "concesiones-line", "concesiones-label"],
   // IGN Carta Nacional 1:100k topographic contours.
   contornos:    ["contours-line", "contours-label"],
+  // Áreas Naturales Protegidas (SERNANP) — regulatory.
+  anp:          ["anp-fill", "anp-line", "anp-label"],
+  // Zonas de Amortiguamiento (SERNANP) — same regulatory weight, lighter style.
+  za:           ["za-fill", "za-line"],
+  // Lagunas (IGN 1:100k) — standing water bodies.
+  lagunas:      ["lagunas-fill", "lagunas-line"],
   // Peru country outline (low-zoom reference layer).
   peruOutline:  ["peru-boundary-line"],
   // sampling-station kinds are filtered via filter expression rather
@@ -141,6 +147,12 @@ interface ProjectMapProps {
   areaEfectiva?: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   /** Vegetation zones from MINAM 2015 cobertura vegetal. Optional. */
   vegetationZones?: GeoJSON.FeatureCollection | null;
+  /** SERNANP Áreas Naturales Protegidas intersecting the project. Optional. */
+  anp?: GeoJSON.FeatureCollection | null;
+  /** SERNANP Zonas de Amortiguamiento intersecting the project. Optional. */
+  za?: GeoJSON.FeatureCollection | null;
+  /** IGN 1:100k lagunas inside the project's district(s). Optional. */
+  lagunas?: GeoJSON.FeatureCollection | null;
   /** Mining concessions (Concesiones Mineras) from INGEMMET Geocatmin. Optional. */
   concesiones?: GeoJSON.FeatureCollection | null;
   /** Contour lines (IGN Carta Nacional 1:100,000) clipped to project buffer. Optional. */
@@ -285,6 +297,9 @@ export default function ProjectMap({
   distritos,
   comunidades,
   vias,
+  anp,
+  za,
+  lagunas,
   editingAreaEfectiva = false,
   onAreaEfectivaGeomChange,
   areaEfectivaEditorResetKey = 0,
@@ -313,6 +328,9 @@ export default function ProjectMap({
     comunidades: true,
     roads: true,
     concesiones: true,
+    anp: true,
+    za: true,
+    lagunas: true,
     // Contours hidden by default — they add a lot of ink and most users
     // only want them when reading topography.
     contornos: false,
@@ -985,6 +1003,107 @@ export default function ProjectMap({
         },
       });
 
+      // Áreas Naturales Protegidas (SERNANP) — regulatory red hatch.
+      // When the project intersects an ANP, the AnpOverlapBanner above the
+      // map flags it as a SERNANP-opinion case.  Here we just render the
+      // polygon outline + diagonal-stripe fill for context on the map.
+      map.addSource("anp", {
+        type: "geojson",
+        data: anp ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "anp-fill",
+        type: "fill",
+        source: "anp",
+        paint: {
+          "fill-color":   "#dc2626", // red-600
+          "fill-opacity": 0.10,
+        },
+      });
+      map.addLayer({
+        id: "anp-line",
+        type: "line",
+        source: "anp",
+        paint: {
+          "line-color": "#991b1b", // red-800
+          "line-width": 1.4,
+          "line-dasharray": [3, 2],
+          "line-opacity": 0.85,
+        },
+      });
+      map.addLayer({
+        id: "anp-label",
+        type: "symbol",
+        source: "anp",
+        minzoom: 9,
+        layout: {
+          "text-field": ["coalesce", ["get", "nombre"], ""],
+          "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+          "text-size": 11,
+          "text-max-width": 8,
+          "symbol-placement": "point",
+        },
+        paint: {
+          "text-color": "#991b1b",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.4,
+        },
+      });
+
+      // Zonas de Amortiguamiento (SERNANP) — same regulatory weight but a
+      // softer amber palette so it doesn't compete visually with the ANP
+      // polygons it surrounds.
+      map.addSource("za", {
+        type: "geojson",
+        data: za ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "za-fill",
+        type: "fill",
+        source: "za",
+        paint: {
+          "fill-color":   "#d97706", // amber-600
+          "fill-opacity": 0.06,
+        },
+      });
+      map.addLayer({
+        id: "za-line",
+        type: "line",
+        source: "za",
+        paint: {
+          "line-color": "#92400e", // amber-800
+          "line-width": 1.0,
+          "line-dasharray": [4, 3],
+          "line-opacity": 0.7,
+        },
+      });
+
+      // Lagunas (IGN 1:100k) — natural standing water bodies.  Distinct
+      // blue palette so they're recognisable next to the river layer.
+      map.addSource("lagunas", {
+        type: "geojson",
+        data: lagunas ?? EMPTY_FC,
+      });
+      map.addLayer({
+        id: "lagunas-fill",
+        type: "fill",
+        source: "lagunas",
+        paint: {
+          "fill-color":   "#0284c7", // sky-600
+          "fill-opacity": 0.45,
+        },
+      });
+      map.addLayer({
+        id: "lagunas-line",
+        type: "line",
+        source: "lagunas",
+        paint: {
+          "line-color": "#075985", // sky-800
+          "line-width": 0.8,
+          "line-opacity": 0.85,
+        },
+      });
+
       // Peru country outline — low-zoom reference layer (hidden past z7).
       map.addSource("peru-boundary", {
         type: "geojson",
@@ -1543,6 +1662,15 @@ export default function ProjectMap({
     const contoursSrc = map.getSource("contours") as GeoJSONSource | undefined;
     if (contoursSrc) contoursSrc.setData(contours ?? EMPTY_FC);
 
+    const anpSrc = map.getSource("anp") as GeoJSONSource | undefined;
+    if (anpSrc) anpSrc.setData(anp ?? EMPTY_FC);
+
+    const zaSrc = map.getSource("za") as GeoJSONSource | undefined;
+    if (zaSrc) zaSrc.setData(za ?? EMPTY_FC);
+
+    const lagunasSrc = map.getSource("lagunas") as GeoJSONSource | undefined;
+    if (lagunasSrc) lagunasSrc.setData(lagunas ?? EMPTY_FC);
+
     const comunSrc = map.getSource("comunidades") as GeoJSONSource | undefined;
     if (comunSrc) comunSrc.setData(comunidades ?? EMPTY_FC);
 
@@ -1576,7 +1704,7 @@ export default function ProjectMap({
     if (map.getLayer("area-estudio-line")) {
       map.setPaintProperty("area-estudio-line", "line-color", areaColor);
     }
-  }, [geojson, districtMicrocuencas, strahlerCatchments, catchmentPoint, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData, comunidades, vias]);
+  }, [geojson, districtMicrocuencas, strahlerCatchments, catchmentPoint, rivers, receptores, samplingStations, areaEstudio, areaEfectiva, areaColor, vegetationZones, concesiones, contours, peruBoundary, boundaryData, comunidades, vias, anp, za, lagunas]);
 
   // Separate effect specifically for boundary data updates
   useEffect(() => {
@@ -1715,6 +1843,9 @@ export default function ProjectMap({
   const hasRoads = (vias?.features.length ?? 0) > 0;
   const hasConcesiones = (concesiones?.features.length ?? 0) > 0;
   const hasContours = (contours?.features.length ?? 0) > 0;
+  const hasAnp     = (anp?.features.length ?? 0) > 0;
+  const hasZa      = (za?.features.length ?? 0) > 0;
+  const hasLagunas = (lagunas?.features.length ?? 0) > 0;
   const hasPeruBoundary = peruBoundary !== null && peruBoundary !== undefined;
 
   // Distinct station kinds present, in stable order, for the legend.
@@ -2133,6 +2264,33 @@ export default function ProjectMap({
                 color: "#78716c",
                 visible: groupVisible.contornos,
                 onToggle: () => toggleGroup("contornos"),
+              }
+            : null,
+          hasLagunas
+            ? {
+                label: "Lagunas (IGN 1:100k)",
+                swatch: "area" as const,
+                color: "#0284c7",
+                visible: groupVisible.lagunas,
+                onToggle: () => toggleGroup("lagunas"),
+              }
+            : null,
+          hasAnp
+            ? {
+                label: "Áreas Naturales Protegidas",
+                swatch: "dashedLine" as const,
+                color: "#991b1b",
+                visible: groupVisible.anp,
+                onToggle: () => toggleGroup("anp"),
+              }
+            : null,
+          hasZa
+            ? {
+                label: "Zonas de Amortiguamiento",
+                swatch: "dashedLine" as const,
+                color: "#92400e",
+                visible: groupVisible.za,
+                onToggle: () => toggleGroup("za"),
               }
             : null,
           hasPeruBoundary

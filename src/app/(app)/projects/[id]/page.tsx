@@ -88,6 +88,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: excludableTributariesRows },
     { data: anpOverlapRows },
     { data: alaRows },
+    { data: lagunasRows },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -132,6 +133,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_excludable_tributaries_for_project", { p_project_id: id }),
     supabase.rpc("get_anp_overlap_for_project", { p_project_id: id }),
     supabase.rpc("get_ala_for_project", { p_project_id: id }),
+    supabase.rpc("get_lagunas_for_district", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -158,6 +160,64 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   const anpOverlaps = (anpOverlapRows ?? []) as AnpOverlapRow[];
   const alaList = (alaRows ?? []) as AlaRow[];
   const primaryAla = alaList[0] ?? null;  // sorted by overlap desc
+
+  // Split anpOverlaps into two FeatureCollections so the map renders
+  // ANP and Zonas de Amortiguamiento as separate layers.
+  const anpFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: anpOverlaps
+      .filter((o) => o.kind === "anp")
+      .map((o) => ({
+        type: "Feature",
+        id: o.id,
+        geometry: JSON.parse(o.geom_geojson) as GeoJSON.Geometry,
+        properties: {
+          id: o.id,
+          nombre: o.nombre,
+          categoria: o.categoria,
+          area_ha: o.area_ha,
+          overlap_ha: o.overlap_ha,
+        },
+      })),
+  };
+  const zaFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: anpOverlaps
+      .filter((o) => o.kind === "za")
+      .map((o) => ({
+        type: "Feature",
+        id: o.id,
+        geometry: JSON.parse(o.geom_geojson) as GeoJSON.Geometry,
+        properties: {
+          id: o.id,
+          nombre: o.nombre,
+          area_ha: o.area_ha,
+          overlap_ha: o.overlap_ha,
+        },
+      })),
+  };
+
+  interface LagunaRow {
+    id: number;
+    source_id: string;
+    nombre: string | null;
+    area_ha: number | null;
+    geom_geojson: string;
+  }
+  const lagunas = (lagunasRows ?? []) as LagunaRow[];
+  const lagunasFc: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: lagunas.map((l) => ({
+      type: "Feature",
+      id: l.id,
+      geometry: JSON.parse(l.geom_geojson) as GeoJSON.Geometry,
+      properties: {
+        id: l.id,
+        nombre: l.nombre,
+        area_ha: l.area_ha,
+      },
+    })),
+  };
 
   // `get_catchment_points_for_project` returns 0-2 rows: one per kind.
   const catchmentPointRowsList = (catchmentPointRows ?? []) as CatchmentPointRow[];
@@ -563,6 +623,9 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             vegetationFc={vegetationFc}
             concesionesFc={concesionesFc}
             contoursFc={contoursFc}
+            anpFc={anpFc}
+            zaFc={zaFc}
+            lagunasFc={lagunasFc}
             peruBoundaryFeature={peruBoundaryFeature}
             departamentosFc={departamentosFc}
             provinciasFc={provinciasFc}
@@ -642,6 +705,9 @@ function ResumenTab({
   vegetationFc,
   concesionesFc,
   contoursFc,
+  anpFc,
+  zaFc,
+  lagunasFc,
   peruBoundaryFeature,
   departamentosFc,
   provinciasFc,
@@ -690,6 +756,9 @@ function ResumenTab({
   vegetationFc: GeoJSON.FeatureCollection;
   concesionesFc: GeoJSON.FeatureCollection;
   contoursFc: GeoJSON.FeatureCollection;
+  anpFc: GeoJSON.FeatureCollection;
+  zaFc: GeoJSON.FeatureCollection;
+  lagunasFc: GeoJSON.FeatureCollection;
   peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   departamentosFc: GeoJSON.FeatureCollection;
   provinciasFc: GeoJSON.FeatureCollection;
@@ -796,6 +865,9 @@ function ResumenTab({
             vegetationFc={vegetationFc}
             concesionesFc={concesionesFc}
             contoursFc={contoursFc}
+            anpFc={anpFc}
+            zaFc={zaFc}
+            lagunasFc={lagunasFc}
             peruBoundaryFeature={peruBoundaryFeature}
             departamentosFc={departamentosFc}
             provinciasFc={provinciasFc}
@@ -828,6 +900,9 @@ function ResumenTab({
                 vegetationZones={vegetationFc}
                 concesiones={concesionesFc}
                 contours={contoursFc}
+                anp={anpFc}
+                za={zaFc}
+                lagunas={lagunasFc}
                 peruBoundary={peruBoundaryFeature}
                 departamentos={departamentosFc}
                 provincias={provinciasFc}
@@ -1100,6 +1175,9 @@ function MapWithLeyenda({
   vegetationFc,
   concesionesFc,
   contoursFc,
+  anpFc,
+  zaFc,
+  lagunasFc,
   peruBoundaryFeature,
   departamentosFc,
   provinciasFc,
@@ -1123,6 +1201,9 @@ function MapWithLeyenda({
   vegetationFc: GeoJSON.FeatureCollection;
   concesionesFc: GeoJSON.FeatureCollection;
   contoursFc: GeoJSON.FeatureCollection;
+  anpFc: GeoJSON.FeatureCollection;
+  zaFc: GeoJSON.FeatureCollection;
+  lagunasFc: GeoJSON.FeatureCollection;
   peruBoundaryFeature: GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null;
   departamentosFc: GeoJSON.FeatureCollection;
   provinciasFc: GeoJSON.FeatureCollection;
@@ -1180,6 +1261,9 @@ function MapWithLeyenda({
               vegetationZones={vegetationFc}
               concesiones={concesionesFc}
               contours={contoursFc}
+              anp={anpFc}
+              za={zaFc}
+              lagunas={lagunasFc}
               peruBoundary={peruBoundaryFeature}
               departamentos={departamentosFc}
               provincias={provinciasFc}
