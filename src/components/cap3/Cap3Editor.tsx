@@ -3,11 +3,10 @@
 // Cap 3 — Línea Base.
 //
 // Wraps the shared ChapterEditor. The actual section/field structure lives
-// in `lib/dia/cap3/fields.ts`. Per `BASELINE-SPEC.md`, Cap 3 will eventually
-// fan out into three independent baseline documents (Físico / Biológico /
-// Socio-cultural); when that lands, the split logic lives here (e.g. a
-// baseline selector in `sidebarTopExtras`) instead of leaking into the
-// shared editor.
+// in `lib/dia/cap3/fields.ts`. Per `BASELINE-SPEC.md`, Cap 3 fans out into
+// three independent baseline documents (Físico / Biológico / Socio-cultural):
+// the combined "Generar Word" plus three baseline export presets below it.
+// The split builders live in `lib/dia/cap3/sections.ts`.
 
 import ChapterEditor from "@/components/dia/ChapterEditor";
 import { DG_FIELDS, SECTIONS } from "@/lib/dia/cap3/fields";
@@ -40,6 +39,11 @@ export default function Cap3Editor({
       dgGroups={DG_FIELDS}
       initialActiveId="3.1"
       initiallyOpenIds={["3.0", "3.2", "3.3", "3.4"]}
+      docxExportPresets={[
+        { label: "LB Físico", query: "baseline=fisico", filenameSuffix: "LB_Fisico" },
+        { label: "LB Biológico", query: "baseline=biologico", filenameSuffix: "LB_Biologico" },
+        { label: "LB Socio-cultural", query: "baseline=social", filenameSuffix: "LB_Social" },
+      ]}
     />
   );
 }

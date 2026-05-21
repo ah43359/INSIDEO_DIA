@@ -59,6 +59,10 @@ export interface ChapterEditorProps {
   sidebarBottomExtras?: React.ReactNode;
   /** Override the chapter's docx-export filename prefix (default: `Cap{N}`). */
   exportFilenamePrefix?: string;
+  /** Extra docx-export buttons rendered below the main "Generar Word" button.
+   *  Each posts the same chapter state with a query string appended (e.g.
+   *  `baseline=fisico`) — used by Cap 3 to export the three baseline annexes. */
+  docxExportPresets?: readonly { label: string; query: string; filenameSuffix: string }[];
 }
 
 type GenerateState = "idle" | "generating" | "error";
@@ -87,6 +91,7 @@ export default function ChapterEditor({
   sidebarTopExtras,
   sidebarBottomExtras,
   exportFilenamePrefix,
+  docxExportPresets,
 }: ChapterEditorProps) {
   const [state, setState] = useState<ChapterState>(prefill);
   const [hydrated, setHydrated] = useState(false);
@@ -172,11 +177,12 @@ export default function ChapterEditor({
     ev.target.value = "";
   }
 
-  async function handleGenerate(): Promise<void> {
+  async function handleGenerate(query?: string, filenameSuffix?: string): Promise<void> {
     setGenerate("generating");
     setErrorMsg(null);
     try {
-      const response = await fetch(`/api/projects/${projectId}/dia/${chapterId}`, {
+      const endpoint = `/api/projects/${projectId}/dia/${chapterId}${query ? `?${query}` : ""}`;
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(toChapterExportV7(state)),
@@ -189,7 +195,8 @@ export default function ChapterEditor({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${exportFilenamePrefix ?? `Cap${chapterId}`}_${chapterTitle.replace(/\s+/g, "_")}_${projectName.replace(/\s+/g, "_")}.docx`;
+      const suffix = filenameSuffix ? `_${filenameSuffix}` : "";
+      a.download = `${exportFilenamePrefix ?? `Cap${chapterId}`}_${chapterTitle.replace(/\s+/g, "_")}${suffix}_${projectName.replace(/\s+/g, "_")}.docx`;
       a.click();
       URL.revokeObjectURL(url);
       setGenerate("idle");
@@ -404,7 +411,7 @@ export default function ChapterEditor({
         {sidebarTopExtras}
         <div className="flex flex-col gap-2 rounded-lg border border-stone-200 bg-white p-3">
           <button
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={generate === "generating"}
             className="flex items-center justify-center gap-2 rounded-md bg-stone-800 px-3 py-2 text-xs font-medium text-white transition hover:bg-stone-700 disabled:opacity-50"
           >
@@ -414,9 +421,19 @@ export default function ChapterEditor({
                 Generando…
               </>
             ) : (
-              "Generar Word"
+              docxExportPresets?.length ? "Generar Word (completo)" : "Generar Word"
             )}
           </button>
+          {docxExportPresets?.map((preset) => (
+            <button
+              key={preset.query}
+              onClick={() => handleGenerate(preset.query, preset.filenameSuffix)}
+              disabled={generate === "generating"}
+              className="flex items-center justify-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-50"
+            >
+              {preset.label}
+            </button>
+          ))}
           {ragEnabled && (
             <button
               onClick={handleSynthesize}
