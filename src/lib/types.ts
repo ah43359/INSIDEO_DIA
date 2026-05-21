@@ -389,7 +389,7 @@ export const STATION_COLORS: Record<string, string> = {
   agua_subterranea: "#0284c7",
   suelos: "#a16207",
   sedimentos: "#854d0e",
-  hidrobiologicos: "#16a34a",
+  hidrobiologicos: "#0d9488",
   default: "#1f2937",
 };
 

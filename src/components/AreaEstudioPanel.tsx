@@ -60,6 +60,7 @@ const KIND_LABEL: Record<string, string> = {
   agua_subterranea: "Agua subterránea",
   suelos: "Suelos",
   sedimentos: "Sedimentos",
+  hidrobiologicos: "Hidrobiología",
 };
 
 const KIND_COLOR: Record<string, string> = {
@@ -70,6 +71,7 @@ const KIND_COLOR: Record<string, string> = {
   agua_subterranea: "#0284c7",
   suelos: "#a16207",
   sedimentos: "#854d0e",
+  hidrobiologicos: "#0d9488",
 };
 
 // MINAM 2015 Simbolo → color. Subset covers the common cobertura vegetal
@@ -119,7 +121,7 @@ function groupStations(stations: SamplingStationRow[]): PanelStationGroup[] {
   }
   const order = ["aire", "ruido", "vibraciones",
                  "agua_superficial", "agua_subterranea",
-                 "suelos", "sedimentos"];
+                 "suelos", "sedimentos", "hidrobiologicos"];
   return [...map.entries()]
     .map(([kind, rows]) => ({ kind, rows }))
     .sort((a, b) => {

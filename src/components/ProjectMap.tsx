@@ -177,7 +177,8 @@ const STATION_COLORS: Record<string, string> = {
   agua_subterranea: "#0284c7", // darker sky
   suelos:           "#a16207", // earth
   sedimentos:       "#854d0e", // brown
-  flora_fauna:      "#16a34a", // green — biological evaluation
+  flora_fauna:      "#16a34a", // green — terrestrial biological evaluation
+  hidrobiologicos:  "#0d9488", // teal — aquatic biological monitoring
   default:          "#1f2937", // graphite
 };
 
@@ -1137,6 +1138,7 @@ export default function ProjectMap({
             "suelos",           7,
             "sedimentos",       8,
             "flora_fauna",      9,
+            "hidrobiologicos",  10,
             8,
           ],
           "circle-color": [
@@ -1150,6 +1152,7 @@ export default function ProjectMap({
             "suelos",           STATION_COLORS.suelos,
             "sedimentos",       STATION_COLORS.sedimentos,
             "flora_fauna",      STATION_COLORS.flora_fauna,
+            "hidrobiologicos",  STATION_COLORS.hidrobiologicos,
             STATION_COLORS.default,
           ],
           "circle-stroke-width": 2.5,
@@ -2265,6 +2268,7 @@ const SAMPLING_KIND_LABEL: Record<string, string> = {
   suelos: "Suelos",
   sedimentos: "Sedimentos",
   flora_fauna: "Flora y fauna",
+  hidrobiologicos: "Hidrobiología",
 };
 
 function LegendSwatch({ item }: { item: LegendItem }) {
