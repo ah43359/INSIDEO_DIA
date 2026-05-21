@@ -64,9 +64,15 @@ export async function POST(
         case 1:
           buffer = await buildCap1Document(state, projectName);
           break;
-        case 3:
-          buffer = await buildCap3Document(state, projectName);
+        case 3: {
+          const baselineParam = request.nextUrl.searchParams.get("baseline");
+          const baseline =
+            baselineParam === "fisico" || baselineParam === "biologico" || baselineParam === "social"
+              ? baselineParam
+              : undefined;
+          buffer = await buildCap3Document(state, projectName, baseline);
           break;
+        }
         case 4:
           buffer = await buildCap4Document(state, projectName);
           break;
@@ -94,7 +100,11 @@ export async function POST(
     .replace(/[^a-zA-Z0-9à-ü\s]/g, "")
     .replace(/\s+/g, "_")
     .slice(0, 60) || "proyecto";
-  const filename = `Cap${entry.id}_${entry.shortTitle.replace(/\s+/g, "_")}_${sanitizedProject}.docx`;
+  const baselineSuffix =
+    entry.id === 3 && ["fisico", "biologico", "social"].includes(request.nextUrl.searchParams.get("baseline") ?? "")
+      ? `_LB_${request.nextUrl.searchParams.get("baseline")}`
+      : "";
+  const filename = `Cap${entry.id}_${entry.shortTitle.replace(/\s+/g, "_")}${baselineSuffix}_${sanitizedProject}.docx`;
 
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,

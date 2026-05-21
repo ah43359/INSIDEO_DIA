@@ -1,22 +1,35 @@
-// Capítulo 3 — Línea Base: docx body builder.
+// Capítulo 3 — Línea Base: docx body builders.
+//
+// The DIA's Cap 3 ships as three independent baseline documents (LB Físico,
+// LB Biológico, LB Socio-cultural) generated and reviewed in isolation, plus a
+// combined view. Each medio is composed from the same pure section-group
+// helpers below so the split and combined outputs never drift.
 
 import type { Paragraph } from "docx";
 import { bodyP, sectionHeading } from "@/lib/dia/framework/styles";
 import type { ChapterState } from "@/lib/dia/framework/state";
 
-export function buildLineaBase(state: ChapterState): Paragraph[] {
-  const dF = state.dgFields;
+export type BaselineKind = "fisico" | "biologico" | "social";
+
+type Fields = Record<string, string>;
+
+// ── Section groups (pure; no top-level "3.0" heading) ──────────────────────
+
+/** 3.1 Alcance y metodología. */
+function alcanceMetodologia(dF: Fields): Paragraph[] {
   const out: Paragraph[] = [];
-
-  out.push(sectionHeading(1, "3.0 Línea Base"));
-
   out.push(sectionHeading(2, "3.1 Alcance y metodología"));
   out.push(bodyP(`Temporada de levantamiento de campo: ${dF.lb_temporadaCampo || "[Completar]"}.`));
   out.push(bodyP(dF.lb_metodologiaGeneral?.trim() || "[Completar metodología general]"));
   if (dF.lb_fuentesSecundarias?.trim()) {
     out.push(bodyP(`Fuentes secundarias: ${dF.lb_fuentesSecundarias.trim()}.`));
   }
+  return out;
+}
 
+/** 3.2 Medio físico (3.2.1 → 3.2.9). */
+function medioFisico(dF: Fields): Paragraph[] {
+  const out: Paragraph[] = [];
   out.push(sectionHeading(2, "3.2 Medio físico"));
 
   out.push(sectionHeading(3, "3.2.1 Meteorología, clima y zonas de vida"));
@@ -78,6 +91,12 @@ export function buildLineaBase(state: ChapterState): Paragraph[] {
   out.push(bodyP(`Parámetros: ${dF.lb_aguaSubParametros || "[Completar]"}.`));
   out.push(bodyP(dF.lb_aguaSubResultados?.trim() || "[Completar resultados]"));
 
+  return out;
+}
+
+/** 3.3 Medio biológico (3.3.1 → 3.3.3). */
+function medioBiologico(dF: Fields): Paragraph[] {
+  const out: Paragraph[] = [];
   out.push(sectionHeading(2, "3.3 Medio biológico"));
 
   out.push(sectionHeading(3, "3.3.1 Flora"));
@@ -97,6 +116,12 @@ export function buildLineaBase(state: ChapterState): Paragraph[] {
     out.push(bodyP(`Ecosistemas frágiles: ${dF.lb_ecosistemasFragiles.trim()}.`));
   out.push(bodyP(`Relación con ANP: ${dF.lb_anpRelacion || "[Completar]"}.`));
 
+  return out;
+}
+
+/** 3.4 Medio socioeconómico-cultural (3.4.1 → 3.4.3). */
+function medioSocial(dF: Fields): Paragraph[] {
+  const out: Paragraph[] = [];
   out.push(sectionHeading(2, "3.4 Medio socioeconómico-cultural"));
 
   out.push(sectionHeading(3, "3.4.1 Demografía"));
@@ -113,6 +138,12 @@ export function buildLineaBase(state: ChapterState): Paragraph[] {
   out.push(bodyP(dF.lb_usoActual?.trim() || "[Completar uso actual]"));
   out.push(bodyP(`Tenencia de la tierra: ${dF.lb_tenenciaTierra || "[Completar]"}.`));
 
+  return out;
+}
+
+/** 3.5 Arqueología + 3.6 Cartografía — regulatory framing carried by LB Físico. */
+function arqueologiaCartografia(dF: Fields): Paragraph[] {
+  const out: Paragraph[] = [];
   out.push(sectionHeading(2, "3.5 Arqueología y patrimonio cultural"));
   out.push(bodyP(`Estudio realizado: ${dF.lb_estudioArqueo || "[Completar]"}.`));
   if (dF.lb_ciras?.trim()) out.push(bodyP(`CIRAs: ${dF.lb_ciras.trim()}.`));
@@ -121,6 +152,46 @@ export function buildLineaBase(state: ChapterState): Paragraph[] {
   out.push(sectionHeading(2, "3.6 Cartografía"));
   out.push(bodyP(dF.lb_planosListado?.trim() || "[Completar listado de planos]"));
   if (dF.lb_anexoPlanos?.trim()) out.push(bodyP(`Ver ${dF.lb_anexoPlanos}.`));
-
   return out;
+}
+
+// ── Document bodies ────────────────────────────────────────────────────────
+
+/**
+ * LB Físico: 3.1 alcance + 3.2 medio físico + 3.5 arqueología + 3.6 cartografía.
+ * This document carries the regulatory framing for the whole baseline study.
+ */
+export function buildLbFisico(state: ChapterState): Paragraph[] {
+  const dF = state.dgFields;
+  return [
+    sectionHeading(1, "3. Línea Base — Medio Físico"),
+    ...alcanceMetodologia(dF),
+    ...medioFisico(dF),
+    ...arqueologiaCartografia(dF),
+  ];
+}
+
+/** LB Biológico: 3.3 medio biológico (flora, fauna, ecosistemas). */
+export function buildLbBiologico(state: ChapterState): Paragraph[] {
+  const dF = state.dgFields;
+  return [sectionHeading(1, "3. Línea Base — Medio Biológico"), ...medioBiologico(dF)];
+}
+
+/** LB Socio-cultural: 3.4 medio socioeconómico-cultural. */
+export function buildLbSocial(state: ChapterState): Paragraph[] {
+  const dF = state.dgFields;
+  return [sectionHeading(1, "3. Línea Base — Medio Socioeconómico-cultural"), ...medioSocial(dF)];
+}
+
+/** Combined view (all medios in regulatory section order). */
+export function buildLineaBase(state: ChapterState): Paragraph[] {
+  const dF = state.dgFields;
+  return [
+    sectionHeading(1, "3.0 Línea Base"),
+    ...alcanceMetodologia(dF),
+    ...medioFisico(dF),
+    ...medioBiologico(dF),
+    ...medioSocial(dF),
+    ...arqueologiaCartografia(dF),
+  ];
 }
