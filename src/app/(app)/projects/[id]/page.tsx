@@ -11,6 +11,7 @@ import {
   type CatchmentPointRow,
   type ExcludableTributaryRow,
   type AnpOverlapRow,
+  type AlaRow,
   type Project,
   type RfiSubmission,
   type RiverRow,
@@ -86,6 +87,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: catchmentPointRows },
     { data: excludableTributariesRows },
     { data: anpOverlapRows },
+    { data: alaRows },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -129,6 +131,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_catchment_points_for_project", { p_project_id: id }),
     supabase.rpc("get_excludable_tributaries_for_project", { p_project_id: id }),
     supabase.rpc("get_anp_overlap_for_project", { p_project_id: id }),
+    supabase.rpc("get_ala_for_project", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -153,6 +156,8 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   const excludableTributaries =
     (excludableTributariesRows ?? []) as ExcludableTributaryRow[];
   const anpOverlaps = (anpOverlapRows ?? []) as AnpOverlapRow[];
+  const alaList = (alaRows ?? []) as AlaRow[];
+  const primaryAla = alaList[0] ?? null;  // sorted by overlap desc
 
   // `get_catchment_points_for_project` returns 0-2 rows: one per kind.
   const catchmentPointRowsList = (catchmentPointRows ?? []) as CatchmentPointRow[];
@@ -587,6 +592,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             resumenV2={resumenV2}
             excludableTributaries={excludableTributaries}
             anpOverlaps={anpOverlaps}
+            primaryAla={primaryAla}
           />
         ) : activeTab === "linea_base" ? (
           <SocialBaselinePanel
@@ -665,6 +671,7 @@ function ResumenTab({
   resumenV2,
   excludableTributaries,
   anpOverlaps,
+  primaryAla,
 }: {
   p: ProjectRow;
   id: string;
@@ -712,6 +719,7 @@ function ResumenTab({
   resumenV2: boolean;
   excludableTributaries: ExcludableTributaryRow[];
   anpOverlaps: AnpOverlapRow[];
+  primaryAla: AlaRow | null;
 }) {
   const layerError =
     areaError?.message ??
@@ -747,6 +755,12 @@ function ResumenTab({
               ["Commodity", p.commodity?.join(", ") ?? "—"],
               ["Método de exploración", p.metodo_exploracion?.join(", ") ?? "—"],
               ["Brownfield", p.proyecto_brownfield ? "Sí" : "No"],
+              [
+                "Autoridad del Agua",
+                primaryAla
+                  ? `ALA ${primaryAla.nombre}${primaryAla.aaa_nombre ? ` · AAA ${primaryAla.aaa_nombre}` : ""}${primaryAla.rh ? ` · ${primaryAla.rh}` : ""}`
+                  : "—",
+              ],
             ]}
           />
         </Card>

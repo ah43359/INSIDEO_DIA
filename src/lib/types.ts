@@ -115,6 +115,19 @@ export interface MicrocuencaRow {
 /** Catchment polygon associated with a Strahler-2+ river, from get_strahler_catchments_for_project. */
 export type StrahlerCatchmentRow = MicrocuencaRow;
 
+/** Autoridad Local del Agua (ANA) jurisdiction the project falls under.
+ *  Returned by get_ala_for_project. */
+export interface AlaRow {
+  id: number;
+  source_id: string;
+  nombre: string;
+  sede: string | null;
+  rh: string | null;
+  aaa_nombre: string | null;
+  area_km2: number | null;
+  overlap_km2: number;
+}
+
 /** ANP or Zona de Amortiguamiento polygon that overlaps the project.
  *  Returned by get_anp_overlap_for_project. */
 export interface AnpOverlapRow {
