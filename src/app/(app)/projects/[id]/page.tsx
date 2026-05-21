@@ -10,11 +10,13 @@ import {
   type ConcesionRow,
   type CatchmentPointRow,
   type ExcludableTributaryRow,
+  type AnpOverlapRow,
   type Project,
   type RfiSubmission,
   type RiverRow,
   type SamplingStationRow,
 } from "@/lib/types";
+import AnpOverlapBanner from "@/components/AnpOverlapBanner";
 import AreaEstudioPanel from "@/components/AreaEstudioPanel";
 import CampoPanel from "@/components/CampoPanel";
 import PresupuestoPanel from "@/components/PresupuestoPanel";
@@ -83,6 +85,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: socialBaselineRows },
     { data: catchmentPointRows },
     { data: excludableTributariesRows },
+    { data: anpOverlapRows },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -125,6 +128,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_social_baseline_for_project", { p_project_id: id }),
     supabase.rpc("get_catchment_points_for_project", { p_project_id: id }),
     supabase.rpc("get_excludable_tributaries_for_project", { p_project_id: id }),
+    supabase.rpc("get_anp_overlap_for_project", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -148,6 +152,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
   const excludableTributaries =
     (excludableTributariesRows ?? []) as ExcludableTributaryRow[];
+  const anpOverlaps = (anpOverlapRows ?? []) as AnpOverlapRow[];
 
   // `get_catchment_points_for_project` returns 0-2 rows: one per kind.
   const catchmentPointRowsList = (catchmentPointRows ?? []) as CatchmentPointRow[];
@@ -581,6 +586,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             subs={subs}
             resumenV2={resumenV2}
             excludableTributaries={excludableTributaries}
+            anpOverlaps={anpOverlaps}
           />
         ) : activeTab === "linea_base" ? (
           <SocialBaselinePanel
@@ -658,6 +664,7 @@ function ResumenTab({
   subs,
   resumenV2,
   excludableTributaries,
+  anpOverlaps,
 }: {
   p: ProjectRow;
   id: string;
@@ -704,6 +711,7 @@ function ResumenTab({
   subs: RfiSubmission[];
   resumenV2: boolean;
   excludableTributaries: ExcludableTributaryRow[];
+  anpOverlaps: AnpOverlapRow[];
 }) {
   const layerError =
     areaError?.message ??
@@ -724,6 +732,9 @@ function ResumenTab({
 
   return (
     <div className="space-y-6">
+      {/* Regulatory banner — only renders when the project overlaps an ANP or ZA */}
+      <AnpOverlapBanner overlaps={anpOverlaps} />
+
       {/* PROYECTO / TITULAR two-column block */}
       <div className="grid gap-5 md:grid-cols-2">
         <Card title="Proyecto">

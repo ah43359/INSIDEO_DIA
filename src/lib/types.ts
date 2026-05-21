@@ -115,6 +115,20 @@ export interface MicrocuencaRow {
 /** Catchment polygon associated with a Strahler-2+ river, from get_strahler_catchments_for_project. */
 export type StrahlerCatchmentRow = MicrocuencaRow;
 
+/** ANP or Zona de Amortiguamiento polygon that overlaps the project.
+ *  Returned by get_anp_overlap_for_project. */
+export interface AnpOverlapRow {
+  /** 'anp' = the protected area itself; 'za' = its buffer zone. */
+  kind: "anp" | "za";
+  id: number;
+  nombre: string;
+  categoria: string | null;
+  area_ha: number | null;
+  /** Hectares of overlap with the project geometry. */
+  overlap_ha: number;
+  geom_geojson: string;
+}
+
 /** A named tributary inside the current AE that the user may opt to exclude.
  *  Returned by get_excludable_tributaries_for_project. */
 export interface ExcludableTributaryRow {
