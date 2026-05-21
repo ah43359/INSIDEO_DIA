@@ -2,6 +2,7 @@ import type {
   AreaEstudioRow,
   CatchmentPointRow,
   CentroPobladoRow,
+  ExcludableTributaryRow,
   SamplingStationRow,
 } from "@/lib/types";
 import AreaEstudioActions from "@/components/AreaEstudioActions";
@@ -31,6 +32,8 @@ interface AreaEstudioPanelProps {
   componentCount: number;
   /** Vegetation zones from MINAM 2015 cobertura vegetal. */
   vegetationZones: VegetationZoneRow[];
+  /** Named tributaries inside the current AE that the user may exclude. */
+  excludableTributaries: ExcludableTributaryRow[];
 }
 
 interface VegetationZoneRow {
@@ -142,6 +145,7 @@ export default function AreaEstudioPanel({
   hasAreaEstudio,
   componentCount,
   vegetationZones,
+  excludableTributaries,
 }: AreaEstudioPanelProps) {
   const stationGroups = groupStations(stations);
   const insideAE = receptores.filter((r) => r.inside_area_estudio).length;
@@ -195,6 +199,9 @@ export default function AreaEstudioPanel({
           projectId={projectId}
           defaultMinUpstreamM={upstreamCp?.min_distance_m ?? null}
           defaultMinDownstreamM={downstreamCp?.min_distance_m ?? null}
+          defaultTrunkBufferM={area?.inputs_snapshot.trunk_buffer_m ?? null}
+          excludableTributaries={excludableTributaries}
+          initialExcludedIds={area?.inputs_snapshot.excluded_tributary_ids ?? []}
         />
       </div>
 

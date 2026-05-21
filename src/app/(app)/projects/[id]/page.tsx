@@ -9,6 +9,7 @@ import {
   type ComponenteInventario,
   type ConcesionRow,
   type CatchmentPointRow,
+  type ExcludableTributaryRow,
   type Project,
   type RfiSubmission,
   type RiverRow,
@@ -81,6 +82,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     { data: viasRows, error: viasError },
     { data: socialBaselineRows },
     { data: catchmentPointRows },
+    { data: excludableTributariesRows },
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -122,6 +124,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     supabase.rpc("get_vias_for_project", { p_project_id: id }),
     supabase.rpc("get_social_baseline_for_project", { p_project_id: id }),
     supabase.rpc("get_catchment_points_for_project", { p_project_id: id }),
+    supabase.rpc("get_excludable_tributaries_for_project", { p_project_id: id }),
   ]);
 
   if (projectError || !project) {
@@ -142,6 +145,9 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   // history (not shown in v1).
   const areaRowsAll = (areaRows ?? []) as AreaEstudioRow[];
   const area = areaRowsAll[0] ?? null;
+
+  const excludableTributaries =
+    (excludableTributariesRows ?? []) as ExcludableTributaryRow[];
 
   // `get_catchment_points_for_project` returns 0-2 rows: one per kind.
   const catchmentPointRowsList = (catchmentPointRows ?? []) as CatchmentPointRow[];
@@ -574,6 +580,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             grouped={grouped}
             subs={subs}
             resumenV2={resumenV2}
+            excludableTributaries={excludableTributaries}
           />
         ) : activeTab === "linea_base" ? (
           <SocialBaselinePanel
@@ -650,6 +657,7 @@ function ResumenTab({
   grouped,
   subs,
   resumenV2,
+  excludableTributaries,
 }: {
   p: ProjectRow;
   id: string;
@@ -695,6 +703,7 @@ function ResumenTab({
   grouped: Record<string, ComponenteInventario[]>;
   subs: RfiSubmission[];
   resumenV2: boolean;
+  excludableTributaries: ExcludableTributaryRow[];
 }) {
   const layerError =
     areaError?.message ??
@@ -826,6 +835,7 @@ function ResumenTab({
           class_name: v.class_name ?? "",
           area_ha: v.area_ha ?? 0,
         }))}
+        excludableTributaries={excludableTributaries}
       />
 
       {/* Resultados de Monitoreo */}

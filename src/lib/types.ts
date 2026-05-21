@@ -115,6 +115,18 @@ export interface MicrocuencaRow {
 /** Catchment polygon associated with a Strahler-2+ river, from get_strahler_catchments_for_project. */
 export type StrahlerCatchmentRow = MicrocuencaRow;
 
+/** A named tributary inside the current AE that the user may opt to exclude.
+ *  Returned by get_excludable_tributaries_for_project. */
+export interface ExcludableTributaryRow {
+  /** ref_rivers.id of the tributary's mainstem segment (highest Strahler).
+   *  Used as a stable identifier in the exclusion list. */
+  id: number;
+  nombre: string;
+  strahler_order: number | null;
+  segments: number;
+  length_km: number;
+}
+
 export type AreaEstudioStatus = "draft" | "approved" | "superseded";
 export type AreaEstudioGeneratedBy = "auto" | "manual";
 
@@ -145,10 +157,12 @@ export interface AreaEstudioInputsSnapshot {
   upstream_catchment_point?: { x: number; y: number; receiving_river_nombre?: string | null; confluent_river_nombre?: string | null } | null;
   downstream_catchment_point?: { x: number; y: number; receiving_river_nombre?: string | null; confluent_river_nombre?: string | null } | null;
   method?: string;
-  // river_corridor strategy fields
+  // river_corridor (legacy) / watershed_with_exclusions fields
   receiving_river_nombre?: string | null;
   corridor_width_m?: number;
-  excluded_tributary_ids?: string[];
+  trunk_buffer_m?: number;
+  excluded_tributary_ids?: number[];
+  excluded_tributary_names?: string[];
 }
 
 export type CatchmentPointKind = "upstream" | "downstream";

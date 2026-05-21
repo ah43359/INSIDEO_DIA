@@ -21,27 +21,35 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-// ─── Enqueue: river-corridor study area along the receiving river ───────
+// ─── Enqueue: watershed-with-exclusions study area ──────────────────────
+//
+// Computes the between-control-points watershed and optionally subtracts
+// the upstream catchments of user-selected named tributaries (Approach C).
+// The RPC name stays enqueue_river_corridor_study_area for backward
+// compatibility — the underlying algorithm changed but the queue plumbing
+// didn't.
 
-export interface RiverCorridorOptions {
+export interface WatershedExclusionsOptions {
   /** Minimum metres past the AE polygon for the downstream control point. */
   minDownstreamM?: number;
   /** Minimum metres past the AE polygon for the upstream control point. */
   minUpstreamM?: number;
-  /** Buffer width (m) on each side of the receiving-river path. */
-  corridorWidthM?: number;
-  /** Future use: subtract these named-tributary catchments before persisting. */
-  excludedTributaryIds?: string[];
+  /** ref_rivers.id of named tributaries to subtract from the watershed. */
+  excludedTributaryIds?: number[];
+  /** Buffer (m) around the receiving river that the tributary flood-fill
+   *  is forbidden to enter — prevents the flood from spilling into the
+   *  main stem when geometries are coincident at the confluence. */
+  trunkBufferM?: number;
 }
 
 export async function enqueueRiverCorridorStudyArea(
   projectId: string,
-  options: RiverCorridorOptions = {},
+  options: WatershedExclusionsOptions = {},
 ): Promise<ActionResult> {
   const payload: Record<string, unknown> = {};
   if (options.minDownstreamM != null) payload.min_downstream_m = options.minDownstreamM;
   if (options.minUpstreamM   != null) payload.min_upstream_m   = options.minUpstreamM;
-  if (options.corridorWidthM != null) payload.corridor_width_m = options.corridorWidthM;
+  if (options.trunkBufferM   != null) payload.trunk_buffer_m   = options.trunkBufferM;
   if (options.excludedTributaryIds && options.excludedTributaryIds.length > 0) {
     payload.excluded_tributary_ids = options.excludedTributaryIds;
   }
